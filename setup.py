@@ -4,7 +4,6 @@ setup(
     name="traffic_rl",
     version="1.0.0",
     description="Traffic Light Management with Reinforcement Learning",
-    author="Henri Chevreux, Charles de Monchy, Emiliano Pizaña Vela, Alfonso Mateos Vicente",
     author_email="",
     packages=find_packages(),
     install_requires=[

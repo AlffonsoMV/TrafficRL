@@ -24,7 +24,7 @@ from datetime import datetime
 from traffic_rl.config import load_config, save_config, override_config_with_args
 from traffic_rl.train import train
 from traffic_rl.evaluate import evaluate_agent
-from traffic_rl.benchmark import benchmark_agents, create_benchmark_agents
+from traffic_rl.utils.benchmark import benchmark_agents, create_benchmark_agents
 from traffic_rl.utils.logging import setup_logging
 from traffic_rl.utils.visualization import (
     visualize_results, 
@@ -382,7 +382,8 @@ def analyze_command(args, logger):
         benchmark_dir=args.benchmark_dir,
         output_dir=args.output,
         traffic_patterns=traffic_patterns,
-        num_episodes=args.episodes
+        num_episodes=args.episodes,
+        reuse_visualizations=False  # Always create new visualizations
     )
     
     if analysis_dir:

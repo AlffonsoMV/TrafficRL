@@ -18,7 +18,6 @@ To install the package from source:
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/traffic-rl.git
-cd traffic-rl
 
 # Install the package in development mode
 pip install -e .
@@ -62,18 +61,20 @@ traffic_rl evaluate --model results/training/best_model.pth --episodes 20 --outp
 traffic_rl visualize --type environment --duration 5 --model results/training/best_model.pth --output results/visualizations
 ```
 
-### Benchmarking
-
-```bash
-# Benchmark multiple agents
-traffic_rl benchmark --model results/training/best_model.pth --output results/benchmark --patterns uniform,rush_hour,weekend
-```
-
 ### Analysis
 
+The analysis command runs both benchmarking and analysis in one step:
+
 ```bash
-# Comprehensive analysis
+# Comprehensive analysis (includes benchmarking)
 traffic_rl analyze --model results/training/best_model.pth --output results/analysis --episodes 10
+```
+
+You can also use existing benchmark results if available:
+
+```bash
+# Analysis using existing benchmark results
+traffic_rl analyze --model results/training/best_model.pth --benchmark-dir results/benchmark --output results/analysis
 ```
 
 ## Advanced Features

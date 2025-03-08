@@ -300,6 +300,54 @@ class DQNAgent:
             logger.error(f"Error saving model: {e}")
             return False
     
+    def get_q_values(self, state):
+        """
+        Get Q-values for a given state.
+        
+        Args:
+            state: Current state
+            
+        Returns:
+            Q-values for all actions
+        """
+        try:
+            # Handle different input types for state
+            if isinstance(state, torch.Tensor):
+                # Already a tensor
+                state_tensor = state.float()
+                if state_tensor.dim() == 1:
+                    state_tensor = state_tensor.unsqueeze(0)
+            else:
+                # Convert to numpy array first, ensuring correct dtype
+                try:
+                    # Try direct conversion if already numpy-like
+                    np_state = np.array(state, dtype=np.float32)
+                    state_tensor = torch.tensor(np_state, dtype=torch.float32).unsqueeze(0)
+                except Exception as e:
+                    logger.warning(f"Error converting state to tensor: {e}")
+                    # Fallback method
+                    state_tensor = torch.FloatTensor([state]).unsqueeze(0)
+            
+            # Move to device
+            state_tensor = state_tensor.to(self.device)
+            
+            # Set to evaluation mode
+            self.local_network.eval()
+            
+            with torch.no_grad():
+                q_values = self.local_network(state_tensor)
+            
+            # Set back to training mode
+            self.local_network.train()
+            
+            # Return as numpy array
+            return q_values.cpu().data.numpy()[0]
+                
+        except Exception as e:
+            logger.error(f"Error in get_q_values() method: {e}")
+            # Return zeros as fallback
+            return np.zeros(self.action_size)
+    
     def load(self, filename):
         """Load the model."""
         if not os.path.isfile(filename):

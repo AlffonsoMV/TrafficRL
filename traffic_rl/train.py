@@ -11,6 +11,7 @@ import torch
 import logging
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import pygame  # Add pygame import
 
 # Import environment and agent
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
@@ -114,12 +115,30 @@ def train(config, model_dir="models"):
             
             # Episode loop
             for step in range(config["max_steps"]):
+                # Handle pygame events to keep the window responsive
+                if config["visualization"]:
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            pygame.quit()
+                            env.visualization = False
+                            config["visualization"] = False
+                            logger.info("Visualization disabled by user")
+                
+                # Update episode and step information for visualization
+                if config["visualization"]:
+                    env.current_episode = episode
+                    env.current_step = step
+                
                 # Select action
                 action = agent.act(state)
                 
                 # Take action in environment
                 next_state, reward, terminated, truncated, info = env.step(action)
                 next_state = next_state.flatten()  # Flatten for NN input
+                
+                # Render the environment if visualization is enabled
+                if config["visualization"]:
+                    env.render()
                 
                 # Apply reward clipping if enabled
                 if config.get("clip_rewards", False):
@@ -223,6 +242,13 @@ def train(config, model_dir="models"):
                 logger.info(f"Early stopping at episode {episode} - Reached target performance")
                 break
         
+        # Record training end time
+        end_time = time.time()
+        metrics["training_time"] = end_time - start_time
+        
+        # Close the environment
+        env.close()
+        
         # Close progress bar
         if progress_bar is not None:
             progress_bar.close()
@@ -235,26 +261,46 @@ def train(config, model_dir="models"):
         except Exception as e:
             logger.error(f"Failed to save final model: {e}")
         
-        # Record total training time
-        metrics["training_time"] = time.time() - start_time
-        logger.info(f"Total training time: {metrics['training_time']:.2f} seconds")
+        return metrics
+    
+    except KeyboardInterrupt:
+        logger.info("Training interrupted by user")
+        # Save the model before exiting
+        try:
+            model_path = os.path.join(model_dir, "interrupted_model.pth")
+            agent.save(model_path)
+            logger.info(f"Interrupted model saved to {model_path}")
+        except Exception as e:
+            logger.error(f"Failed to save interrupted model: {e}")
         
-        # Close environment
+        # Close the environment
         env.close()
         
-        # Return metrics
+        # Close progress bar
+        if progress_bar is not None:
+            progress_bar.close()
+            
         return metrics
     
     except Exception as e:
         logger.error(f"Training failed: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        return {
-            "rewards": [],
-            "avg_rewards": [],
-            "eval_rewards": [],
-            "error": str(e)
-        }
+        
+        # Close the environment
+        try:
+            env.close()
+        except Exception:
+            pass
+        
+        # Close progress bar
+        if progress_bar is not None:
+            try:
+                progress_bar.close()
+            except Exception:
+                pass
+                
+        raise
 
 
 if __name__ == "__main__":

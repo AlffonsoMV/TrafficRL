@@ -1,0 +1,11 @@
+{
+    "rewards": [],
+    "avg_rewards": [],
+    "eval_rewards": [],
+    "loss_values": [],
+    "epsilon_values": [],
+    "learning_rates": [],
+    "waiting_times": [],
+    "throughput": [],
+    "training_time": 0
+}

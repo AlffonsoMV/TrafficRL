@@ -20,7 +20,7 @@ class TrafficSimulation(gym.Env):
     Represents a grid of intersections controlled by traffic lights.
     Each intersection has four incoming lanes (North, East, South, West).
     """
-    metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': 30}
+    metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': 180}
     
     def __init__(self, config, visualization=False, random_seed=None):
         """
@@ -430,21 +430,51 @@ class TrafficSimulation(gym.Env):
     def _init_visualization(self):
         """Initialize pygame for visualization."""
         try:
-            pygame.init()
+            # Check if pygame is already initialized
+            if pygame.get_init():
+                logger.info("Pygame already initialized")
+            else:
+                pygame.init()
+                
             self.screen_width = 800
             self.screen_height = 800
-            # Try to set display mode, fall back to headless if needed
+            
+            # Try to set display mode with different fallback options
             try:
-                self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
+                # Try hardware accelerated mode first
+                self.screen = pygame.display.set_mode(
+                    (self.screen_width, self.screen_height),
+                    pygame.HWSURFACE | pygame.DOUBLEBUF
+                )
+                logger.info("Using hardware accelerated rendering")
             except pygame.error:
-                os.environ['SDL_VIDEODRIVER'] = 'dummy'
-                self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
-                logger.warning("Using dummy video driver for headless rendering")
+                try:
+                    # Fall back to software rendering
+                    self.screen = pygame.display.set_mode(
+                        (self.screen_width, self.screen_height)
+                    )
+                    logger.info("Using software rendering")
+                except pygame.error:
+                    # Last resort: dummy video driver for headless environments
+                    os.environ['SDL_VIDEODRIVER'] = 'dummy'
+                    self.screen = pygame.display.set_mode(
+                        (self.screen_width, self.screen_height)
+                    )
+                    logger.warning("Using dummy video driver for headless rendering")
                 
             pygame.display.set_caption("Traffic Simulation")
             self.clock = pygame.time.Clock()
+            
+            # Initialize font
+            pygame.font.init()
+            self.font = pygame.font.Font(None, 24)
+            if not pygame.font.get_init():
+                logger.warning("Failed to initialize pygame font module")
+                
+            logger.info("Visualization initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize visualization: {e}")
+            self.visualization = False
             raise
     
     def render(self, mode='human'):
@@ -453,6 +483,11 @@ class TrafficSimulation(gym.Env):
             return None
         
         try:
+            # Check if pygame is still running
+            if not pygame.get_init():
+                logger.warning("Pygame not initialized, reinitializing...")
+                self._init_visualization()
+                
             # Fill background
             self.screen.fill((255, 255, 255))
             
@@ -507,9 +542,15 @@ class TrafficSimulation(gym.Env):
                     
                     # Display traffic density as text
                     try:
-                        font = pygame.font.Font(None, 24)
-                        ns_text = font.render(f"NS: {self.traffic_density[idx, 0]:.2f}", True, (0, 0, 0))
-                        ew_text = font.render(f"EW: {self.traffic_density[idx, 1]:.2f}", True, (0, 0, 0))
+                        # Use pre-initialized font
+                        if hasattr(self, 'font') and self.font:
+                            ns_text = self.font.render(f"NS: {self.traffic_density[idx, 0]:.2f}", True, (0, 0, 0))
+                            ew_text = self.font.render(f"EW: {self.traffic_density[idx, 1]:.2f}", True, (0, 0, 0))
+                        else:
+                            # Fallback to creating a new font
+                            font = pygame.font.Font(None, 24)
+                            ns_text = font.render(f"NS: {self.traffic_density[idx, 0]:.2f}", True, (0, 0, 0))
+                            ew_text = font.render(f"EW: {self.traffic_density[idx, 1]:.2f}", True, (0, 0, 0))
                         
                         self.screen.blit(ns_text, (x + 10, y + 10))
                         self.screen.blit(ew_text, (x + 10, y + 30))
@@ -517,7 +558,22 @@ class TrafficSimulation(gym.Env):
                         # Continue without text if font rendering fails
                         logger.warning(f"Font rendering failed: {e}")
             
+            # Add episode and step information
+            if hasattr(self, 'current_episode') and hasattr(self, 'current_step'):
+                try:
+                    if hasattr(self, 'font') and self.font:
+                        info_text = self.font.render(
+                            f"Episode: {self.current_episode}, Step: {self.current_step}", 
+                            True, (0, 0, 0)
+                        )
+                        self.screen.blit(info_text, (10, self.screen_height - 30))
+                except Exception as e:
+                    logger.warning(f"Could not render episode info: {e}")
+            
+            # Update display
             pygame.display.flip()
+            
+            # Control frame rate
             self.clock.tick(self.metadata['render_fps'])
             
             if mode == 'rgb_array':
@@ -525,7 +581,8 @@ class TrafficSimulation(gym.Env):
                     return np.transpose(
                         np.array(pygame.surfarray.pixels3d(self.screen)), axes=(1, 0, 2)
                     )
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"Could not create RGB array: {e}")
                     return None
                     
         except Exception as e:

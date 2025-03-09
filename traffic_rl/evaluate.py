@@ -8,6 +8,7 @@ import os
 import numpy as np
 import torch
 import logging
+import pygame  # Add pygame import
 
 # Import environment and agent
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
@@ -35,10 +36,27 @@ def evaluate(agent, env, num_episodes=10):
         total_reward = 0
         
         for step in range(1000):  # Max steps
+            # Handle pygame events to keep the window responsive
+            if hasattr(env, 'visualization') and env.visualization:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        env.visualization = False
+                        logger.info("Visualization disabled by user")
+            
+            # Update episode and step information for visualization
+            if hasattr(env, 'visualization') and env.visualization:
+                env.current_episode = episode + 1
+                env.current_step = step
+                
             action = agent.act(state, eval_mode=True)
             next_state, reward, terminated, truncated, _ = env.step(action)
             next_state = next_state.flatten()  # Flatten for NN input
             
+            # Render the environment if visualization is enabled
+            if hasattr(env, 'visualization') and env.visualization:
+                env.render()
+                
             state = next_state
             total_reward += reward
             
@@ -66,7 +84,7 @@ def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=1
         # Initialize environment
         env = TrafficSimulation(
             config=config,
-            visualization=False,
+            visualization=config["visualization"],
             random_seed=config.get("random_seed", 42)
         )
         
@@ -113,9 +131,27 @@ def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=1
             episode_density = []
             
             for step in range(config.get("max_steps", 1000)):
+                # Handle pygame events to keep the window responsive
+                if config["visualization"]:
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            pygame.quit()
+                            env.visualization = False
+                            config["visualization"] = False
+                            logger.info("Visualization disabled by user")
+                
+                # Update episode and step information for visualization
+                if config["visualization"]:
+                    env.current_episode = episode + 1
+                    env.current_step = step
+                
                 action = agent.act(state, eval_mode=True)
                 next_state, reward, terminated, truncated, info = env.step(action)
                 next_state = next_state.flatten()
+                
+                # Render the environment if visualization is enabled
+                if config["visualization"]:
+                    env.render()
                 
                 state = next_state
                 total_reward += reward

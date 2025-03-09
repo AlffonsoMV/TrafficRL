@@ -47,11 +47,21 @@ After installation, you can use the `traffic_rl` command-line tool:
 traffic_rl train --output results/training
 ```
 
+```bash
+# Basic training with real-time vizualisation (WARNING: this slows down training time)
+traffic_rl train --output results/training --visualization
+```
+
 ### Evaluation
 
 ```bash
 # Evaluate a model on multiple traffic patterns
 traffic_rl evaluate --model results/training/best_model.pth --episodes 20 --output results/evaluation
+
+```bash
+# Evaluate a model with real-time vizualisation (WARNING: this slows down training time)
+traffic_rl evaluate --model results/training/best_model.pth --episodes 20 --output results/evaluation --visualization
+```
 ```
 
 ### Visualization

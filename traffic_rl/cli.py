@@ -61,6 +61,11 @@ def train_command(args, logger):
         config["num_episodes"] = args.episodes
         logger.info(f"Setting number of episodes to {args.episodes} (from command line)")
     
+    # Set visualization flag if provided
+    if args.visualization is not None:
+        config["visualization"] = args.visualization
+        logger.info(f"Setting visualization to {args.visualization} (from command line)")
+    
     # Set random seed if provided
     if set_random_seed(config.get("random_seed")):
         logger.info(f"Random seed set to {config.get('random_seed')}")
@@ -77,7 +82,7 @@ def train_command(args, logger):
     metrics = train(config, model_dir=args.output)
     
     # Visualize results
-    if not args.no_visualization:
+    if not args.no_plots:
         logger.info("Training complete, visualizing results...")
         visualize_results(
             metrics["rewards"], 
@@ -429,12 +434,13 @@ def parse_args():
     
     # Train command
     train_parser = subparsers.add_parser("train", help="Train a reinforcement learning agent")
-    train_parser.add_argument("--output", type=str, default="results/training",
-                             help="Directory to save training results")
-    train_parser.add_argument("--episodes", type=int, default=None,
-                             help="Number of training episodes")
-    train_parser.add_argument("--no-visualization", action="store_true",
-                             help="Disable training visualization")
+    train_parser.add_argument("--config", type=str, help="Path to configuration file")
+    train_parser.add_argument("--episodes", type=int, help="Number of training episodes")
+    train_parser.add_argument("--output", type=str, default="results/training", help="Output directory")
+    train_parser.add_argument("--no-visualization", dest="visualization", action="store_false", help="Disable visualization during training")
+    train_parser.add_argument("--visualization", dest="visualization", action="store_true", help="Enable visualization during training")
+    train_parser.set_defaults(visualization=None)  # Default to None to use config value
+    train_parser.add_argument("--no-plots", action="store_true", help="Disable plotting of training results")
     
     # Evaluate command
     eval_parser = subparsers.add_parser("evaluate", help="Evaluate a trained agent")
@@ -446,6 +452,9 @@ def parse_args():
                             help="Number of evaluation episodes")
     eval_parser.add_argument("--patterns", type=str, default="uniform",
                             help="Comma-separated list of traffic patterns to evaluate")
+    eval_parser.add_argument("--no-visualization", dest="visualization", action="store_false", help="Disable visualization during evaluation")
+    eval_parser.add_argument("--visualization", dest="visualization", action="store_true", help="Enable visualization during evaluation")
+    eval_parser.set_defaults(visualization=None)  # Default to None to use config value
     
     # Visualize command
     viz_parser = subparsers.add_parser("visualize", help="Create visualizations")

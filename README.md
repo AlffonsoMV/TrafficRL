@@ -47,6 +47,11 @@ After installation, you can use the `traffic_rl` command-line tool:
 traffic_rl train --output results/training
 ```
 
+```bash
+# Basic training with real-time vizualisation (WARNING: this slows down training time)
+traffic_rl train --output results/training --visualization
+```
+
 ### Evaluation
 
 ```bash

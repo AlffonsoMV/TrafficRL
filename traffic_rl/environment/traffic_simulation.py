@@ -20,7 +20,7 @@ class TrafficSimulation(gym.Env):
     Represents a grid of intersections controlled by traffic lights.
     Each intersection has four incoming lanes (North, East, South, West).
     """
-    metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': 30}
+    metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': 180}
     
     def __init__(self, config, visualization=False, random_seed=None):
         """

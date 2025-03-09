@@ -8,15 +8,14 @@ import os
 import logging
 import sys
 
-def setup_logging(log_dir="logs", log_file="log", console_level=logging.INFO, file_level=logging.DEBUG):
+def setup_logging(log_level=logging.INFO, log_dir="logs", log_file="traffic_rl.log"):
     """
     Set up logging configuration.
     
     Args:
+        log_level: Logging level for console output
         log_dir: Directory for log files
         log_file: Log file name
-        console_level: Logging level for console output
-        file_level: Logging level for file output
         
     Returns:
         Logger instance
@@ -37,11 +36,11 @@ def setup_logging(log_dir="logs", log_file="log", console_level=logging.INFO, fi
         # File handler
         file_path = os.path.join(log_dir, log_file)
         file_handler = logging.FileHandler(file_path)
-        file_handler.setLevel(file_level)
+        file_handler.setLevel(logging.DEBUG)  # Always use DEBUG for file logging
         
         # Console handler
         console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(console_level)
+        console_handler.setLevel(log_level)
         
         # Create formatter and add to handlers
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -60,7 +59,7 @@ def setup_logging(log_dir="logs", log_file="log", console_level=logging.INFO, fi
         
         # Ensure we have at least console logging
         console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(console_level)
+        console_handler.setLevel(log_level)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)

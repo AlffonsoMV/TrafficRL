@@ -17,25 +17,25 @@ from datetime import datetime
 
 # Import environment and agents
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
+from traffic_rl.environment.roundabout_simulation import RoundaboutSimulation
 from traffic_rl.agents.dqn_agent import DQNAgent
 from traffic_rl.agents.fixed_timing_agent import FixedTimingAgent, AdaptiveTimingAgent
 from traffic_rl.agents.base import BaseAgent, RandomAgent
 from traffic_rl.config import load_config
+from traffic_rl.utils.environment import create_environment
 
 logger = logging.getLogger("TrafficRL.Utils.Benchmark")
 
-def benchmark_agents(config, agents_to_benchmark, traffic_patterns, num_episodes=10, 
-                     output_dir="results/benchmark", create_visualizations=True):
+def benchmark_agents(agents, config, patterns, episodes=10, env_type="grid"):
     """
     Benchmark multiple agents on multiple traffic patterns.
     
     Args:
+        agents: Dictionary mapping agent names to agent objects
         config: Configuration dictionary
-        agents_to_benchmark: Dictionary mapping agent names to agent objects or model paths
-        traffic_patterns: List of traffic pattern names to test
-        num_episodes: Number of episodes to evaluate each agent on each pattern
-        output_dir: Directory to save benchmark results
-        create_visualizations: Whether to create visualizations of results
+        patterns: List of traffic pattern names to test
+        episodes: Number of episodes to evaluate each agent on each pattern
+        env_type: Type of environment ('grid' or 'roundabout')
         
     Returns:
         Dictionary of benchmark results
@@ -45,219 +45,138 @@ def benchmark_agents(config, agents_to_benchmark, traffic_patterns, num_episodes
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         benchmark_id = f"benchmark_{timestamp}"
         
-        # Create output directory
-        benchmark_dir = os.path.join(output_dir, benchmark_id)
-        os.makedirs(benchmark_dir, exist_ok=True)
-        
-        # Save configuration used for this benchmark
-        with open(os.path.join(benchmark_dir, "benchmark_config.json"), 'w') as f:
-            # Filter out any non-serializable objects from config
-            config_copy = {k: v for k, v in config.items() if isinstance(v, (dict, list, str, int, float, bool, type(None)))}
-            json.dump(config_copy, f, indent=4)
-        
         # Initialize results dictionary
-        benchmark_results = {
-            "benchmark_id": benchmark_id,
-            "config": config_copy,
+        results = {
             "timestamp": timestamp,
-            "num_episodes": num_episodes,
+            "config": config,
+            "patterns": patterns,
+            "episodes": episodes,
+            "env_type": env_type,
             "results": {}
         }
         
-        # Initialize progress bar
-        total_runs = len(agents_to_benchmark) * len(traffic_patterns)
-        progress_bar = tqdm(total=total_runs, desc="Benchmarking Progress")
-        
-        # Dictionary to store all episode data for detailed analysis
+        # Initialize episode data for visualization
         episode_data = []
         
-        # Run benchmark for each agent on each traffic pattern
-        for agent_name, agent_info in agents_to_benchmark.items():
-            for pattern in traffic_patterns:
-                # Update progress bar
-                progress_bar.set_description(f"Testing {agent_name} on {pattern}")
+        # Benchmark each agent on each traffic pattern
+        for pattern in patterns:
+            logger.info(f"Benchmarking on {pattern} traffic pattern...")
+            
+            # Set traffic pattern in config
+            config["traffic_pattern"] = pattern
+            
+            # Initialize environment
+            env = create_environment(
+                config=config,
+                visualization=False,
+                random_seed=config.get("random_seed"),
+                env_type=env_type
+            )
+            
+            # Benchmark each agent
+            for agent_name, agent in agents.items():
+                logger.info(f"Evaluating {agent_name} agent...")
                 
-                # Initialize environment
-                env = TrafficSimulation(
-                    config=config,
-                    visualization=False,
-                    random_seed=config.get("random_seed", 42)
-                )
-                
-                # Set traffic pattern
-                if pattern in config["traffic_patterns"]:
-                    env.traffic_pattern = pattern
-                    env.traffic_config = config["traffic_patterns"][pattern]
-                else:
-                    logger.warning(f"Traffic pattern '{pattern}' not found in config. Using uniform.")
-                    env.traffic_pattern = "uniform"
-                    env.traffic_config = config["traffic_patterns"]["uniform"]
-                
-                # Get state and action sizes
-                state_size = env.observation_space.shape[0] * env.observation_space.shape[1]
-                action_size = env.action_space.n
-                
-                # Initialize agent
-                agent = None
-                
-                if isinstance(agent_info, str):
-                    # Agent info is a model path, so load a DQN agent
-                    agent = DQNAgent(state_size, action_size, config)
-                    if not agent.load(agent_info):
-                        logger.error(f"Failed to load model for agent '{agent_name}' from {agent_info}")
-                        continue
-                elif callable(getattr(agent_info, 'act', None)):
-                    # Agent info is already an agent object
-                    agent = agent_info
-                else:
-                    logger.error(f"Invalid agent info for '{agent_name}': {agent_info}")
-                    continue
-                
-                # Run evaluation episodes
+                # Initialize metrics
                 rewards = []
                 waiting_times = []
                 throughputs = []
                 densities = []
-                step_counts = []
-                congestion_levels = []
-                action_counts = {0: 0, 1: 0}  # Count of NS vs EW actions
                 
-                # Track time
-                start_time = time.time()
-                
-                for episode in range(num_episodes):
-                    # Reset environment and agent if it has a reset method
+                # Run episodes
+                for episode in range(episodes):
                     state, _ = env.reset()
-                    state_flat = state.flatten()
-                    
-                    if hasattr(agent, 'reset') and callable(agent.reset):
-                        agent.reset()
-                    
+                    state = state.flatten()  # Flatten for NN input
                     total_reward = 0
-                    episode_waiting = 0
+                    episode_waiting_time = 0
                     episode_throughput = 0
-                    episode_densities = []
-                    steps = 0
-                    episode_actions = []
+                    episode_density = []
                     
-                    # Run episode
-                    for step in range(config.get("max_steps", 1000)):
-                        action = agent.act(state_flat, eval_mode=True)
-                        next_state, reward, terminated, truncated, info = env.step(action)
-                        next_state_flat = next_state.flatten()
+                    for step in range(1000):  # Max steps
+                        # Select action (using evaluation mode)
+                        action = agent.act(state, eval_mode=True)
                         
-                        state_flat = next_state_flat
+                        # Take action
+                        next_state, reward, terminated, truncated, info = env.step(action)
+                        next_state = next_state.flatten()  # Flatten for NN input
+                        
+                        # Update state and reward
+                        state = next_state
                         total_reward += reward
                         
                         # Track metrics
-                        episode_waiting += info.get('average_waiting_time', 0)
+                        episode_waiting_time += info.get('average_waiting_time', 0)
                         episode_throughput += info.get('total_cars_passed', 0)
-                        episode_densities.append(info.get('traffic_density', 0))
-                        episode_actions.append(int(action))
+                        episode_density.append(info.get('traffic_density', 0))
                         
-                        # Count actions 
-                        if isinstance(action, (int, np.integer)):
-                            action_counts[action] += 1
-                        
-                        steps += 1
-                        
+                        # Check if episode is done
                         if terminated or truncated:
                             break
                     
-                    # Calculate average congestion level for this episode
-                    avg_density = np.mean(episode_densities) if episode_densities else 0
-                    congestion_level = "High" if avg_density > 0.7 else "Medium" if avg_density > 0.4 else "Low"
+                    # Calculate average metrics for this episode
+                    avg_episode_waiting_time = episode_waiting_time / (step + 1)
+                    avg_episode_throughput = episode_throughput / (step + 1)
+                    avg_episode_density = np.mean(episode_density)
                     
-                    # Store episode results
+                    # Store metrics
                     rewards.append(total_reward)
-                    waiting_times.append(episode_waiting / steps if steps > 0 else 0)
-                    throughputs.append(episode_throughput)
-                    densities.append(avg_density)
-                    step_counts.append(steps)
-                    congestion_levels.append(congestion_level)
+                    waiting_times.append(avg_episode_waiting_time)
+                    throughputs.append(avg_episode_throughput)
+                    densities.append(avg_episode_density)
                     
-                    # Add detailed episode data for further analysis
+                    # Add to episode data for visualization
                     episode_data.append({
                         "agent": agent_name,
                         "pattern": pattern,
                         "episode": episode,
                         "reward": total_reward,
-                        "waiting_time": episode_waiting / steps if steps > 0 else 0,
-                        "throughput": episode_throughput,
-                        "avg_density": avg_density,
-                        "steps": steps,
-                        "congestion_level": congestion_level,
-                        "ns_actions": episode_actions.count(0),
-                        "ew_actions": episode_actions.count(1)
+                        "waiting_time": avg_episode_waiting_time,
+                        "throughput": avg_episode_throughput,
+                        "density": avg_episode_density
                     })
                 
-                # Calculate elapsed time
-                elapsed_time = time.time() - start_time
+                # Calculate overall metrics
+                avg_reward = np.mean(rewards)
+                std_reward = np.std(rewards)
+                avg_waiting_time = np.mean(waiting_times)
+                avg_throughput = np.mean(throughputs)
+                avg_density = np.mean(densities)
                 
-                # Calculate action distribution
-                total_actions = sum(action_counts.values())
-                action_distribution = {
-                    "NS_Green": action_counts[0] / total_actions * 100 if total_actions > 0 else 0,
-                    "EW_Green": action_counts[1] / total_actions * 100 if total_actions > 0 else 0
-                }
-                
-                # Calculate statistics
-                benchmark_results["results"][f"{agent_name}_{pattern}"] = {
+                # Store results
+                key = f"{agent_name}_{pattern}"
+                results["results"][key] = {
                     "agent": agent_name,
-                    "traffic_pattern": pattern,
-                    "avg_reward": float(np.mean(rewards)),
-                    "std_reward": float(np.std(rewards)),
-                    "min_reward": float(np.min(rewards)),
-                    "max_reward": float(np.max(rewards)),
-                    "avg_waiting_time": float(np.mean(waiting_times)),
-                    "avg_throughput": float(np.mean(throughputs)),
-                    "avg_density": float(np.mean(densities)),
-                    "avg_steps": float(np.mean(step_counts)),
-                    "elapsed_time": float(elapsed_time),
-                    "episodes": num_episodes,
-                    "action_distribution": action_distribution
+                    "pattern": pattern,
+                    "avg_reward": float(avg_reward),
+                    "std_reward": float(std_reward),
+                    "avg_waiting_time": float(avg_waiting_time),
+                    "avg_throughput": float(avg_throughput),
+                    "avg_density": float(avg_density),
+                    "rewards": rewards,
+                    "waiting_times": waiting_times,
+                    "throughputs": throughputs,
+                    "densities": densities
                 }
                 
-                # Log results
-                logger.info(f"Benchmark results for {agent_name} on {pattern}:")
-                logger.info(f"  Average Reward: {benchmark_results['results'][f'{agent_name}_{pattern}']['avg_reward']:.2f} ± "
-                           f"{benchmark_results['results'][f'{agent_name}_{pattern}']['std_reward']:.2f}")
-                logger.info(f"  Average Waiting Time: {benchmark_results['results'][f'{agent_name}_{pattern}']['avg_waiting_time']:.2f}")
-                logger.info(f"  Average Throughput: {benchmark_results['results'][f'{agent_name}_{pattern}']['avg_throughput']:.2f}")
-                logger.info(f"  Action Distribution: NS={action_distribution['NS_Green']:.1f}%, EW={action_distribution['EW_Green']:.1f}%")
-                
-                # Close environment
-                env.close()
-                
-                # Update progress bar
-                progress_bar.update(1)
+                logger.info(f"{agent_name} on {pattern}: Reward={avg_reward:.2f}±{std_reward:.2f}, Waiting={avg_waiting_time:.2f}")
+            
+            # Close environment
+            env.close()
         
-        # Close progress bar
-        progress_bar.close()
-        
-        # Convert episode data to DataFrame for easier analysis
+        # Convert episode data to DataFrame
         episode_df = pd.DataFrame(episode_data)
-        episode_df.to_csv(os.path.join(benchmark_dir, "episode_data.csv"), index=False)
         
-        # Save benchmark results
-        benchmark_file = os.path.join(benchmark_dir, "benchmark_results.json")
-        with open(benchmark_file, 'w') as f:
-            # Filter out non-serializable objects
-            json.dump(benchmark_results, f, indent=4)
+        return results
         
-        logger.info(f"Benchmark results saved to {benchmark_file}")
-        
-        # Create detailed visualizations if requested
-        if create_visualizations:
-            create_benchmark_visualizations(benchmark_results, episode_df, benchmark_dir)
-        
-        return benchmark_results
-    
     except Exception as e:
-        logger.error(f"Error in benchmark: {e}")
+        logger.error(f"Benchmark failed: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        return {"error": str(e)}
+        
+        return {
+            "error": str(e),
+            "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S")
+        }
 
 
 def create_benchmark_visualizations(benchmark_results, episode_df, output_dir):
@@ -441,7 +360,7 @@ def create_benchmark_visualizations(benchmark_results, episode_df, output_dir):
         congestion_pivot = episode_df.pivot_table(
             values='reward', 
             index='agent', 
-            columns='congestion_level', 
+            columns='density', 
             aggfunc='mean'
         ).fillna(0)
         
@@ -573,42 +492,72 @@ def create_benchmark_visualizations(benchmark_results, episode_df, output_dir):
         logger.error(traceback.format_exc())
 
 
-def create_benchmark_agents(config, model_path=None):
+def create_benchmark_agents(agent_types, config, model_path=None):
     """
     Create a dictionary of agents for benchmarking.
     
     Args:
+        agent_types: List of agent types to create
         config: Configuration dictionary
-        model_path: Path to the trained model (if None, only baseline agents are created)
+        model_path: Path to trained model for DQN agent
         
     Returns:
-        Dictionary mapping agent names to agent objects or model paths
+        Dictionary mapping agent names to agent objects
     """
+    # Create a dummy environment to get state and action sizes
+    env = create_environment(
+        config=config,
+        visualization=False,
+        random_seed=config.get("random_seed"),
+        env_type=config.get("env_type", "grid")
+    )
+    
+    state_size = env.observation_space.shape[0] * env.observation_space.shape[1]
+    action_size = env.action_space.n
+    
+    # Close the environment
+    env.close()
+    
+    # Create agents dictionary
     agents = {}
     
-    # State size calculation for random agent
-    state_size = config.get("grid_size", 4) * config.get("grid_size", 4) * 5
-    
-    # Add baseline agents
-    agents["FixedTiming"] = FixedTimingAgent(
-        action_size=2,  # Binary action space [NS_GREEN, EW_GREEN]
-        phase_duration=config.get("green_duration", 10) * 3  # 3x longer than default green duration
-    )
-    
-    agents["AdaptiveTiming"] = AdaptiveTimingAgent(
-        action_size=2,
-        min_phase_duration=config.get("green_duration", 10),
-        max_phase_duration=config.get("green_duration", 10) * 6
-    )
-    
-    agents["Random"] = RandomAgent(
-        state_size=state_size,
-        action_size=2,
-        seed=config.get("random_seed", 42)
-    )
-    
-    # Add trained agent if model path is provided
-    if model_path and os.path.exists(model_path):
-        agents["TrainedDQN"] = model_path
+    for agent_type in agent_types:
+        if agent_type.lower() == "dqn":
+            # Create DQN agent
+            agent = DQNAgent(state_size, action_size, config)
+            
+            # Load model if provided
+            if model_path and os.path.exists(model_path):
+                if agent.load(model_path):
+                    logger.info(f"Loaded DQN model from {model_path}")
+                    agents["DQN"] = agent
+                else:
+                    logger.error(f"Failed to load DQN model from {model_path}")
+            else:
+                logger.warning("No model path provided for DQN agent, using untrained agent")
+                agents["DQN_Untrained"] = agent
+        
+        elif agent_type.lower() == "fixed":
+            # Create fixed timing agent
+            agents["Fixed_Timing"] = FixedTimingAgent(
+                action_size=action_size,
+                phase_duration=config.get("green_duration", 10)
+            )
+        
+        elif agent_type.lower() == "adaptive":
+            # Create adaptive timing agent
+            agents["Adaptive_Timing"] = AdaptiveTimingAgent(
+                action_size=action_size,
+                min_phase_duration=5,
+                max_phase_duration=20
+            )
+        
+        elif agent_type.lower() == "random":
+            # Create random agent
+            agents["Random"] = RandomAgent(
+                state_size=state_size, 
+                action_size=action_size,
+                seed=config.get("random_seed")
+            )
     
     return agents

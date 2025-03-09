@@ -12,7 +12,9 @@ import pygame  # Add pygame import
 
 # Import environment and agent
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
+from traffic_rl.environment.roundabout_simulation import RoundaboutSimulation
 from traffic_rl.agents.dqn_agent import DQNAgent
+from traffic_rl.utils.environment import create_environment
 
 logger = logging.getLogger("Evaluate")
 
@@ -48,56 +50,54 @@ def evaluate(agent, env, num_episodes=10):
             if hasattr(env, 'visualization') and env.visualization:
                 env.current_episode = episode + 1
                 env.current_step = step
-                
+            
+            # Select action (using evaluation mode)
             action = agent.act(state, eval_mode=True)
+            
+            # Take action
             next_state, reward, terminated, truncated, _ = env.step(action)
             next_state = next_state.flatten()  # Flatten for NN input
             
-            # Render the environment if visualization is enabled
-            if hasattr(env, 'visualization') and env.visualization:
-                env.render()
-                
+            # Update state and reward
             state = next_state
             total_reward += reward
             
+            # Check if episode is done
             if terminated or truncated:
                 break
         
         rewards.append(total_reward)
     
-    return np.mean(rewards)
+    # Calculate average reward
+    avg_reward = np.mean(rewards)
+    
+    return avg_reward
 
-def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=10):
+def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=10, env_type="grid"):
     """
-    Evaluate a trained agent from a model file.
+    Evaluate a trained agent on a specific traffic pattern.
     
     Args:
         config: Configuration dictionary
-        model_path: Path to the model file
-        traffic_pattern: Traffic pattern to use for evaluation
+        model_path: Path to the trained model
+        traffic_pattern: Traffic pattern to evaluate on
         num_episodes: Number of episodes to evaluate
-        
+        env_type: Type of environment ('grid' or 'roundabout')
+    
     Returns:
-        Dictionary of evaluation results
+        Dictionary of evaluation metrics
     """
     try:
-        # Initialize environment
-        env = TrafficSimulation(
-            config=config,
-            visualization=config["visualization"],
-            random_seed=config.get("random_seed", 42)
-        )
+        # Set traffic pattern in config
+        config["traffic_pattern"] = traffic_pattern
         
-        # Set traffic pattern
-        if traffic_pattern in config["traffic_patterns"]:
-            pattern_config = config["traffic_patterns"][traffic_pattern]
-            env.traffic_pattern = traffic_pattern
-            env.traffic_config = pattern_config
-            logger.info(f"Using traffic pattern: {traffic_pattern}")
-        else:
-            logger.warning(f"Traffic pattern {traffic_pattern} not found, using uniform")
-            env.traffic_pattern = "uniform"
-            env.traffic_config = config["traffic_patterns"]["uniform"]
+        # Initialize environment
+        env = create_environment(
+            config=config,
+            visualization=config.get("visualization", False),
+            random_seed=config.get("random_seed"),
+            env_type=env_type
+        )
         
         # Get state and action sizes
         state_size = env.observation_space.shape[0] * env.observation_space.shape[1]
@@ -106,104 +106,102 @@ def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=1
         # Initialize agent
         agent = DQNAgent(state_size, action_size, config)
         
-        # Load model
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model file {model_path} not found")
+        # Load trained model
+        if not agent.load(model_path):
+            logger.error(f"Failed to load model from {model_path}")
+            return {
+                "avg_reward": 0.0,
+                "std_reward": 0.0,
+                "avg_waiting_time": 0.0,
+                "avg_throughput": 0.0,
+                "error": "Failed to load model"
+            }
         
-        success = agent.load(model_path)
-        if not success:
-            raise ValueError(f"Failed to load model from {model_path}")
-        
-        logger.info(f"Evaluating agent from {model_path} with {traffic_pattern} traffic pattern...")
-        
-        # Run evaluation
+        # Evaluate agent
         rewards = []
         waiting_times = []
         throughputs = []
-        densities = []
         
         for episode in range(num_episodes):
             state, _ = env.reset()
-            state = state.flatten()
+            state = state.flatten()  # Flatten for NN input
             total_reward = 0
-            episode_waiting = 0
+            episode_waiting_time = 0
             episode_throughput = 0
-            episode_density = []
             
-            for step in range(config.get("max_steps", 1000)):
+            for step in range(1000):  # Max steps
                 # Handle pygame events to keep the window responsive
-                if config["visualization"]:
+                if hasattr(env, 'visualization') and env.visualization:
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT:
                             pygame.quit()
                             env.visualization = False
-                            config["visualization"] = False
                             logger.info("Visualization disabled by user")
                 
                 # Update episode and step information for visualization
-                if config["visualization"]:
+                if hasattr(env, 'visualization') and env.visualization:
                     env.current_episode = episode + 1
                     env.current_step = step
                 
+                # Select action (using evaluation mode)
                 action = agent.act(state, eval_mode=True)
+                
+                # Take action
                 next_state, reward, terminated, truncated, info = env.step(action)
-                next_state = next_state.flatten()
+                next_state = next_state.flatten()  # Flatten for NN input
                 
-                # Render the environment if visualization is enabled
-                if config["visualization"]:
-                    env.render()
-                
+                # Update state and reward
                 state = next_state
                 total_reward += reward
                 
                 # Track metrics
-                episode_waiting += info.get('average_waiting_time', 0)
+                episode_waiting_time += info.get('average_waiting_time', 0)
                 episode_throughput += info.get('total_cars_passed', 0)
-                episode_density.append(info.get('traffic_density', 0))
                 
+                # Check if episode is done
                 if terminated or truncated:
                     break
             
-            # Store episode results
+            # Calculate average metrics for this episode
+            avg_episode_waiting_time = episode_waiting_time / (step + 1)
+            avg_episode_throughput = episode_throughput / (step + 1)
+            
+            # Store metrics
             rewards.append(total_reward)
-            waiting_times.append(episode_waiting / (step + 1))
-            throughputs.append(episode_throughput)
-            densities.append(np.mean(episode_density))
+            waiting_times.append(avg_episode_waiting_time)
+            throughputs.append(avg_episode_throughput)
             
             logger.info(f"Episode {episode+1}/{num_episodes} - Reward: {total_reward:.2f}")
         
-        # Calculate statistics
+        # Calculate overall metrics
         avg_reward = np.mean(rewards)
         std_reward = np.std(rewards)
-        avg_waiting = np.mean(waiting_times)
+        avg_waiting_time = np.mean(waiting_times)
         avg_throughput = np.mean(throughputs)
-        avg_density = np.mean(densities)
-        
-        logger.info(f"Evaluation complete - Avg Reward: {avg_reward:.2f} ± {std_reward:.2f}")
-        logger.info(f"Avg Waiting Time: {avg_waiting:.2f}, Avg Throughput: {avg_throughput:.2f}")
         
         # Close environment
         env.close()
         
-        # Return results
         return {
             "avg_reward": float(avg_reward),
             "std_reward": float(std_reward),
-            "min_reward": float(np.min(rewards)),
-            "max_reward": float(np.max(rewards)),
-            "avg_waiting_time": float(avg_waiting),
+            "avg_waiting_time": float(avg_waiting_time),
             "avg_throughput": float(avg_throughput),
-            "avg_density": float(avg_density),
-            "traffic_pattern": traffic_pattern,
-            "model_path": model_path,
-            "num_episodes": num_episodes
+            "rewards": rewards,
+            "waiting_times": waiting_times,
+            "throughputs": throughputs
         }
         
     except Exception as e:
         logger.error(f"Evaluation failed: {e}")
         import traceback
         logger.error(traceback.format_exc())
+        
         return {
+            "avg_reward": 0.0,
+            "std_reward": 0.0,
+            "avg_waiting_time": 0.0,
+            "avg_throughput": 0.0,
             "error": str(e)
         }
 

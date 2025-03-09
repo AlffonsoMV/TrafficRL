@@ -452,6 +452,9 @@ def parse_args():
                             help="Number of evaluation episodes")
     eval_parser.add_argument("--patterns", type=str, default="uniform",
                             help="Comma-separated list of traffic patterns to evaluate")
+    eval_parser.add_argument("--no-visualization", dest="visualization", action="store_false", help="Disable visualization during evaluation")
+    eval_parser.add_argument("--visualization", dest="visualization", action="store_true", help="Enable visualization during evaluation")
+    eval_parser.set_defaults(visualization=None)  # Default to None to use config value
     
     # Visualize command
     viz_parser = subparsers.add_parser("visualize", help="Create visualizations")

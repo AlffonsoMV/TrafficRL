@@ -67,7 +67,7 @@ def evaluate(agent, env, num_episodes=10):
     
     return np.mean(rewards)
 
-def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=10):
+def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=10, env_type="grid"):
     """
     Evaluate a trained agent from a model file.
     
@@ -76,16 +76,21 @@ def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=1
         model_path: Path to the model file
         traffic_pattern: Traffic pattern to use for evaluation
         num_episodes: Number of episodes to evaluate
+        env_type: Type of environment ('grid' or 'roundabout')
         
     Returns:
         Dictionary of evaluation results
     """
     try:
-        # Initialize environment
-        env = TrafficSimulation(
+        # Import the create_environment function
+        from traffic_rl.utils.environment import create_environment
+        
+        # Initialize environment using the utility function
+        env = create_environment(
             config=config,
             visualization=config["visualization"],
-            random_seed=config.get("random_seed", 42)
+            random_seed=config.get("random_seed", 42),
+            env_type=env_type
         )
         
         # Set traffic pattern

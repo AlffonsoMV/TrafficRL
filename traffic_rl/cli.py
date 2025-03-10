@@ -108,8 +108,13 @@ def train_command(args, logger):
 
 def evaluate_command(args, logger):
     """Run the evaluation command."""
-    # Load configuration
-    config = load_config(args.config)
+    # Load configuration - use default config if no config file is specified
+    if hasattr(args, 'config') and args.config:
+        config = load_config(args.config)
+    else:
+        # Load default configuration
+        config = load_config(None)
+        logger.info("No configuration file specified, using default configuration")
     
     # Override config with command line arguments
     config = override_config_with_args(config, args)
@@ -148,14 +153,23 @@ def evaluate_command(args, logger):
         logger.info(f"Evaluation results for {pattern}:")
         logger.info(f"  Average Reward: {result['avg_reward']:.2f} ± {result['std_reward']:.2f}")
         logger.info(f"  Average Waiting Time: {result['avg_waiting_time']:.2f}")
-        logger.info(f"  Average Throughput: {result['avg_throughput']:.2f}")
+        logger.info(f"  Total Cars Passed: {result['total_cars_passed']:.2f}")
     
     # Save results
-    results_path = os.path.join(args.output, "evaluation_results.json")
-    with open(results_path, 'w') as f:
-        json.dump(results, f, indent=4)
-    
-    logger.info(f"Evaluation results saved to {results_path}")
+    try:
+        results_path = os.path.join(args.output, "evaluation_results.json")
+        with open(results_path, 'w') as f:
+            # Convert numpy values to Python types for JSON serialization
+            serializable_results = {}
+            for pattern, pattern_results in results.items():
+                serializable_results[pattern] = {
+                    k: float(v) if isinstance(v, (np.integer, np.floating)) else v
+                    for k, v in pattern_results.items()
+                }
+            json.dump(serializable_results, f, indent=4)
+        logger.info(f"Evaluation results saved to {results_path}")
+    except Exception as e:
+        logger.error(f"Failed to save evaluation results: {e}")
     
     return True
 
@@ -468,6 +482,7 @@ def parse_args():
     
     # Evaluate command
     eval_parser = subparsers.add_parser("evaluate", help="Evaluate a trained agent")
+    eval_parser.add_argument("--config", type=str, help="Path to configuration file")
     eval_parser.add_argument("--output", type=str, default="results/evaluation", help="Output directory")
     eval_parser.add_argument("--visualization", action="store_true", help="Enable visualization")
     eval_parser.add_argument("--no-visualization", dest="visualization", action="store_false", help="Disable visualization during evaluation")

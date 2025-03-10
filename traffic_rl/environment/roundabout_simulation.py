@@ -99,16 +99,16 @@ class RoundaboutSimulation(TrafficSimulation):
         self.entry_green_duration = np.zeros(self.num_intersections)
         self.roundabout_green_duration = np.zeros(self.num_intersections)
         
+        # Initialize simulation time
+        self.current_time = 0.0
+        
         # Update these attributes to maintain compatibility with parent class
         self.ns_green_duration = self.entry_green_duration
         self.ew_green_duration = self.roundabout_green_duration
         
         self.light_switches = 0
         
-        # Simulation time
-        self.sim_time = 0
-        
-        # Generate observation
+        # Get initial observation
         observation = self._get_observation()
         
         # Info dictionary
@@ -189,7 +189,7 @@ class RoundaboutSimulation(TrafficSimulation):
             observation = self._get_observation()
             
             # Update simulation time
-            self.sim_time += 1
+            self.current_time += 1.0
             
             # Check if episode is done
             terminated = False
@@ -292,7 +292,7 @@ class RoundaboutSimulation(TrafficSimulation):
             
             # Simulate new cars arriving with daily patterns
             # Time of day effect (0=midnight, 0.5=noon, 1.0=midnight again)
-            time_of_day = (self.sim_time % 1440) / 1440.0  # Normalize to [0,1]
+            time_of_day = (self.current_time % 1440) / 1440.0  # Normalize to [0,1]
             
             # Get traffic pattern configuration
             if self.traffic_pattern == "rush_hour":
@@ -379,7 +379,7 @@ class RoundaboutSimulation(TrafficSimulation):
         return observation
     
     def render(self, mode='human'):
-        """Render the roundabout environment."""
+        """Render the roundabout environment with enhanced visualization."""
         if not self.visualization:
             return None
         
@@ -389,18 +389,32 @@ class RoundaboutSimulation(TrafficSimulation):
                 logger.warning("Pygame not initialized, reinitializing...")
                 self._init_visualization()
                 
-            # Fill background
-            self.screen.fill((255, 255, 255))
+            # Fill background with a light gray color for better contrast
+            self.screen.fill((240, 240, 240))
             
             # Calculate center and radius of roundabout
             center_x = self.screen_width // 2
             center_y = self.screen_height // 2
-            outer_radius = min(self.screen_width, self.screen_height) // 3
+            # Reduce the outer radius to leave more space for the dashboard
+            outer_radius = min(self.screen_width, self.screen_height) // 3.5
             inner_radius = outer_radius // 2
             
-            # Draw roundabout
-            pygame.draw.circle(self.screen, (100, 100, 100), (center_x, center_y), outer_radius)
-            pygame.draw.circle(self.screen, (200, 200, 200), (center_x, center_y), inner_radius)
+            # Draw roundabout with improved visuals
+            # Outer circle (asphalt)
+            pygame.draw.circle(self.screen, (80, 80, 80), (center_x, center_y), outer_radius)
+            # Inner circle (grass/center island)
+            pygame.draw.circle(self.screen, (100, 180, 100), (center_x, center_y), inner_radius)
+            # Lane markings (dashed white line)
+            mid_radius = (outer_radius + inner_radius) // 2
+            for i in range(36):
+                if i % 2 == 0:  # Draw only every other segment for dashed line
+                    start_angle = 2 * math.pi * i / 36
+                    end_angle = 2 * math.pi * (i + 0.5) / 36
+                    start_x = center_x + int(mid_radius * math.cos(start_angle))
+                    start_y = center_y + int(mid_radius * math.sin(start_angle))
+                    end_x = center_x + int(mid_radius * math.cos(end_angle))
+                    end_y = center_y + int(mid_radius * math.sin(end_angle))
+                    pygame.draw.line(self.screen, (255, 255, 255), (start_x, start_y), (end_x, end_y), 2)
             
             # Draw entry/exit points and traffic lights
             for i in range(self.num_intersections):
@@ -411,74 +425,250 @@ class RoundaboutSimulation(TrafficSimulation):
                 entry_x = center_x + int(outer_radius * math.cos(angle))
                 entry_y = center_y + int(outer_radius * math.sin(angle))
                 
-                # Draw road from outside to roundabout
-                road_width = outer_radius // 8
+                # Draw road from outside to roundabout - WIDER ROADS
+                # Increase road width by 50%
+                road_width = int(outer_radius // 6)  # Was outer_radius // 8
                 
-                # Calculate road endpoints
-                outer_x = center_x + int((outer_radius + outer_radius//2) * math.cos(angle))
-                outer_y = center_y + int((outer_radius + outer_radius//2) * math.sin(angle))
+                # Calculate road endpoints - extend roads further out
+                outer_x = center_x + int((outer_radius + outer_radius * 0.7) * math.cos(angle))
+                outer_y = center_y + int((outer_radius + outer_radius * 0.7) * math.sin(angle))
                 
-                # Draw entry/exit roads
-                pygame.draw.line(self.screen, (100, 100, 100), 
+                # Draw entry/exit roads with lane markings
+                pygame.draw.line(self.screen, (80, 80, 80), 
                                 (outer_x, outer_y), (entry_x, entry_y), road_width)
                 
-                # Draw traffic light
-                light_radius = road_width // 2
-                light_x = entry_x - int(road_width * math.cos(angle))
-                light_y = entry_y - int(road_width * math.sin(angle))
+                # Add lane markings on roads
+                lane_x1 = entry_x + int((outer_x - entry_x) * 0.25)
+                lane_y1 = entry_y + int((outer_y - entry_y) * 0.25)
+                lane_x2 = entry_x + int((outer_x - entry_x) * 0.75)
+                lane_y2 = entry_y + int((outer_y - entry_y) * 0.75)
+                pygame.draw.line(self.screen, (255, 255, 255), 
+                                (lane_x1, lane_y1), (lane_x2, lane_y2), 2)
                 
+                # Draw traffic light with improved visuals
+                light_radius = road_width // 2
+                light_x = entry_x - int(road_width * 0.8 * math.cos(angle))
+                light_y = entry_y - int(road_width * 0.8 * math.sin(angle))
+                
+                # Traffic light housing
+                pygame.draw.circle(self.screen, (50, 50, 50), (light_x, light_y), light_radius)
+                
+                # Traffic light color
                 if self.light_states[i] == 0:  # Entry Green
                     # Entry light green
                     pygame.draw.circle(self.screen, (0, 255, 0), 
-                                      (light_x, light_y), light_radius // 2)
+                                      (light_x, light_y), light_radius // 1.5)
                 else:  # Roundabout Green
                     # Entry light red
                     pygame.draw.circle(self.screen, (255, 0, 0), 
-                                      (light_x, light_y), light_radius // 2)
+                                      (light_x, light_y), light_radius // 1.5)
                 
-                # Display traffic density as text
+                # Visualize traffic density with cars
+                num_cars_entry = int(self.traffic_density[i, 0] * 10)
+                num_cars_exit = int(self.traffic_density[i, 1] * 10)
+                
+                # Draw cars on entry roads
+                for j in range(num_cars_entry):
+                    car_distance = j * road_width / 10
+                    car_x = entry_x + int((outer_x - entry_x) * (0.2 + car_distance / (road_width * 1.5)))
+                    car_y = entry_y + int((outer_y - entry_y) * (0.2 + car_distance / (road_width * 1.5)))
+                    pygame.draw.circle(self.screen, (255, 0, 0), (car_x, car_y), 5)  # Red cars for entry, slightly larger
+                
+                # Draw cars on exit roads
+                for j in range(num_cars_exit):
+                    car_distance = j * road_width / 10
+                    car_x = entry_x + int((outer_x - entry_x) * (0.8 - car_distance / (road_width * 1.5)))
+                    car_y = entry_y + int((outer_y - entry_y) * (0.8 - car_distance / (road_width * 1.5)))
+                    pygame.draw.circle(self.screen, (0, 0, 255), (car_x, car_y), 5)  # Blue cars for exit, slightly larger
+                
+                # Display traffic density as text with improved formatting
                 try:
                     # Use pre-initialized font
                     if hasattr(self, 'font') and self.font:
-                        entry_text = self.font.render(f"Entry: {self.traffic_density[i, 0]:.2f}", True, (0, 0, 0))
-                        exit_text = self.font.render(f"Exit: {self.traffic_density[i, 1]:.2f}", True, (0, 0, 0))
+                        entry_text = self.font.render(f"Entry {i+1}: {self.traffic_density[i, 0]:.2f}", True, (0, 0, 0))
+                        exit_text = self.font.render(f"Exit {i+1}: {self.traffic_density[i, 1]:.2f}", True, (0, 0, 0))
+                        wait_text = self.font.render(f"Wait: {self.waiting_time[i, 0]:.1f}s", True, (0, 0, 0))
                     else:
                         # Fallback to creating a new font
                         font = pygame.font.Font(None, 24)
-                        entry_text = font.render(f"Entry: {self.traffic_density[i, 0]:.2f}", True, (0, 0, 0))
-                        exit_text = font.render(f"Exit: {self.traffic_density[i, 1]:.2f}", True, (0, 0, 0))
+                        entry_text = font.render(f"Entry {i+1}: {self.traffic_density[i, 0]:.2f}", True, (0, 0, 0))
+                        exit_text = font.render(f"Exit {i+1}: {self.traffic_density[i, 1]:.2f}", True, (0, 0, 0))
+                        wait_text = font.render(f"Wait: {self.waiting_time[i, 0]:.1f}s", True, (0, 0, 0))
                     
-                    # Calculate text position
+                    # Calculate text position - move text further out to accommodate wider roads
                     text_angle = angle
-                    text_distance = outer_radius + 50
+                    text_distance = outer_radius + 80  # Increased from 50
                     text_x = center_x + int(text_distance * math.cos(text_angle))
                     text_y = center_y + int(text_distance * math.sin(text_angle))
                     
-                    self.screen.blit(entry_text, (text_x - 40, text_y - 10))
-                    self.screen.blit(exit_text, (text_x - 40, text_y + 10))
+                    # Create a semi-transparent background for text
+                    text_bg_width = 120
+                    text_bg_height = 70
+                    text_bg = pygame.Surface((text_bg_width, text_bg_height), pygame.SRCALPHA)
+                    text_bg.fill((255, 255, 255, 180))  # Semi-transparent white
+                    self.screen.blit(text_bg, (text_x - 60, text_y - 25))
+                    
+                    self.screen.blit(entry_text, (text_x - 55, text_y - 20))
+                    self.screen.blit(exit_text, (text_x - 55, text_y))
+                    self.screen.blit(wait_text, (text_x - 55, text_y + 20))
                 except Exception as e:
                     # Continue without text if font rendering fails
                     logger.warning(f"Font rendering failed: {e}")
             
-            # Display roundabout density
+            # Visualize cars in the roundabout
+            num_roundabout_cars = int(self.roundabout_density * 20)
+            for i in range(num_roundabout_cars):
+                car_angle = 2 * math.pi * i / num_roundabout_cars
+                car_radius = (inner_radius + outer_radius) / 2
+                car_x = center_x + int(car_radius * math.cos(car_angle))
+                car_y = center_y + int(car_radius * math.sin(car_angle))
+                pygame.draw.circle(self.screen, (0, 200, 200), (car_x, car_y), 5)  # Cyan cars for roundabout
+            
+            # Display roundabout density with improved formatting
             try:
                 if hasattr(self, 'font') and self.font:
+                    # Create a semi-transparent background for roundabout info
+                    roundabout_bg = pygame.Surface((160, 30), pygame.SRCALPHA)
+                    roundabout_bg.fill((255, 255, 255, 180))  # Semi-transparent white
+                    self.screen.blit(roundabout_bg, (center_x - 80, center_y - 15))
+                    
                     roundabout_text = self.font.render(f"Roundabout: {self.roundabout_density:.2f}", True, (0, 0, 0))
-                    self.screen.blit(roundabout_text, (center_x - 60, center_y - 10))
+                    self.screen.blit(roundabout_text, (center_x - 75, center_y - 10))
             except Exception as e:
                 logger.warning(f"Font rendering failed: {e}")
             
-            # Add episode and step information
-            if hasattr(self, 'current_episode') and hasattr(self, 'current_step'):
-                try:
-                    if hasattr(self, 'font') and self.font:
-                        info_text = self.font.render(
-                            f"Episode: {self.current_episode}, Step: {self.current_step}", 
-                            True, (0, 0, 0)
+            # Create a dashboard at the top of the screen with improved aesthetics
+            dashboard_height = 50  # Further reduced from 60 to 50
+            dashboard_width = self.screen_width
+            
+            # Create a gradient background for the dashboard
+            dashboard = pygame.Surface((dashboard_width, dashboard_height), pygame.SRCALPHA)
+            
+            # Create a gradient from dark blue to dark purple
+            for y in range(dashboard_height):
+                # Calculate gradient color (dark blue to dark purple)
+                r = int(40 + (y / dashboard_height) * 20)  # 40-60
+                g = int(45 + (y / dashboard_height) * 10)  # 45-55
+                b = int(80 + (y / dashboard_height) * 40)  # 80-120
+                pygame.draw.line(dashboard, (r, g, b, 230), (0, y), (dashboard_width, y))
+            
+            # Add a subtle bottom border
+            pygame.draw.line(dashboard, (120, 120, 160, 255), 
+                            (0, dashboard_height-1), (dashboard_width, dashboard_height-1), 2)
+            
+            self.screen.blit(dashboard, (0, 0))  # Position at the top (0, 0)
+            
+            # Add epoch information and metrics to dashboard with improved styling
+            try:
+                if hasattr(self, 'font') and self.font:
+                    # Create fonts for the dashboard
+                    dashboard_font = pygame.font.Font(None, 24)  # Main font
+                    
+                    # Define sections with equal width
+                    section_width = dashboard_width // 3
+                    
+                    # Episode and step information (left section)
+                    if hasattr(self, 'current_episode') and hasattr(self, 'current_step'):
+                        # Create a section background
+                        left_section = pygame.Surface((section_width, dashboard_height), pygame.SRCALPHA)
+                        left_section.fill((255, 255, 255, 15))  # Very subtle white overlay
+                        self.screen.blit(left_section, (0, 0))
+                        
+                        # Add a subtle vertical separator
+                        pygame.draw.line(self.screen, (150, 150, 180, 100), 
+                                        (section_width-1, 5), (section_width-1, dashboard_height-5), 1)
+                        
+                        # Episode text with shadow effect
+                        episode_text = dashboard_font.render(
+                            f"Episode: {self.current_episode}", 
+                            True, (255, 255, 255)
                         )
-                        self.screen.blit(info_text, (10, self.screen_height - 30))
-                except Exception as e:
-                    logger.warning(f"Could not render episode info: {e}")
+                        # Add shadow
+                        episode_shadow = dashboard_font.render(
+                            f"Episode: {self.current_episode}", 
+                            True, (20, 20, 40)
+                        )
+                        self.screen.blit(episode_shadow, (22, 12))  # Shadow
+                        self.screen.blit(episode_text, (20, 10))  # Text
+                        
+                        # Step text
+                        step_text = dashboard_font.render(
+                            f"Step: {self.current_step}", 
+                            True, (220, 220, 255)
+                        )
+                        self.screen.blit(step_text, (20, 30))
+                    
+                    # Traffic pattern information (middle section)
+                    if hasattr(self, 'traffic_pattern'):
+                        # Create a section background
+                        middle_section = pygame.Surface((section_width, dashboard_height), pygame.SRCALPHA)
+                        middle_section.fill((255, 255, 255, 15))  # Very subtle white overlay
+                        self.screen.blit(middle_section, (section_width, 0))
+                        
+                        # Add a subtle vertical separator
+                        pygame.draw.line(self.screen, (150, 150, 180, 100), 
+                                        (section_width*2-1, 5), (section_width*2-1, dashboard_height-5), 1)
+                        
+                        # Pattern text with icon
+                        pattern_text = dashboard_font.render(
+                            f"Pattern: {self.traffic_pattern.capitalize()}", 
+                            True, (255, 255, 255)
+                        )
+                        # Add shadow
+                        pattern_shadow = dashboard_font.render(
+                            f"Pattern: {self.traffic_pattern.capitalize()}", 
+                            True, (20, 20, 40)
+                        )
+                        self.screen.blit(pattern_shadow, (section_width + 22, 12))  # Shadow
+                        self.screen.blit(pattern_text, (section_width + 20, 10))
+                    
+                    # Average waiting time with colored indicator
+                    avg_waiting = self.waiting_time.mean() if hasattr(self, 'waiting_time') else 0
+                    
+                    # Determine color based on waiting time (green to red)
+                    if avg_waiting < 5:
+                        wait_color = (100, 255, 100)  # Green for low waiting time
+                    elif avg_waiting < 15:
+                        wait_color = (255, 255, 100)  # Yellow for medium waiting time
+                    else:
+                        wait_color = (255, 100, 100)  # Red for high waiting time
+                        
+                    waiting_text = dashboard_font.render(
+                        f"Avg Wait: {avg_waiting:.1f}s", 
+                        True, wait_color
+                    )
+                    self.screen.blit(waiting_text, (section_width + 20, 30))
+                    
+                    # Right section - metrics
+                    if hasattr(self, 'cars_passed') and hasattr(self, 'current_time'):
+                        # Create a section background
+                        right_section = pygame.Surface((section_width, dashboard_height), pygame.SRCALPHA)
+                        right_section.fill((255, 255, 255, 15))  # Very subtle white overlay
+                        self.screen.blit(right_section, (section_width*2, 0))
+                        
+                        # Total cars passed
+                        total_cars = self.cars_passed.sum()
+                        cars_text = dashboard_font.render(
+                            f"Cars Passed: {int(total_cars)}", 
+                            True, (255, 255, 255)
+                        )
+                        # Add shadow
+                        cars_shadow = dashboard_font.render(
+                            f"Cars Passed: {int(total_cars)}", 
+                            True, (20, 20, 40)
+                        )
+                        self.screen.blit(cars_shadow, (section_width*2 + 22, 12))  # Shadow
+                        self.screen.blit(cars_text, (section_width*2 + 20, 10))
+                        
+                        # Current time with clock icon
+                        time_text = dashboard_font.render(
+                            f"Time: {int(self.current_time)}s", 
+                            True, (220, 220, 255)
+                        )
+                        self.screen.blit(time_text, (section_width*2 + 20, 30))
+                        
+            except Exception as e:
+                logger.warning(f"Could not render dashboard: {e}")
             
             # Update display
             pygame.display.flip()

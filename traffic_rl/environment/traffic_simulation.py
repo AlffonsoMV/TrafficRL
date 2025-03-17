@@ -39,8 +39,6 @@ class TrafficSimulation(gym.Env):
         # Environment configuration
         self.grid_size = config.get("grid_size", 4)
         self.max_cars = config.get("max_cars", 30)
-        self.green_duration = config.get("green_duration", 1)
-        self.yellow_duration = config.get("yellow_duration", 3)
         self.visualization = visualization
         
         # Set random seed if provided
@@ -93,14 +91,13 @@ class TrafficSimulation(gym.Env):
         # Initialize traffic light states (all start with NS green)
         self.light_states = np.zeros(self.num_intersections, dtype=int)
         
-        # Initialize timers for each traffic light
-        self.timers = np.zeros(self.num_intersections)
-        
         # Track waiting time for cars at each intersection
         self.waiting_time = np.zeros((self.num_intersections, 2))
+        self.prev_waiting_time = np.zeros((self.num_intersections, 2))
         
         # Track number of cars passed through each intersection
         self.cars_passed = np.zeros((self.num_intersections, 2))
+        self.prev_cars_passed = np.zeros((self.num_intersections, 2))
         
         # Track green light durations for each direction
         self.ns_green_duration = np.zeros(self.num_intersections)
@@ -109,6 +106,9 @@ class TrafficSimulation(gym.Env):
         
         # Simulation time
         self.sim_time = 0
+        
+        # Step counter for tracking progress
+        self.step_count = 0
         
         # Generate observation
         observation = self._get_observation()
@@ -134,6 +134,13 @@ class TrafficSimulation(gym.Env):
             info: Additional information
         """
         try:
+            # Increment step counter
+            self.step_count += 1
+            
+            # Store previous state values for relative reward calculations
+            self.prev_waiting_time = np.copy(self.waiting_time)
+            self.prev_cars_passed = np.copy(self.cars_passed)
+            
             # Handle both scalar and array inputs for actions
             if isinstance(actions, (int, np.integer, float, np.floating)):
                 # If a single action is provided, convert to array
@@ -154,15 +161,10 @@ class TrafficSimulation(gym.Env):
                 logger.warning(f"Unexpected action type: {type(actions)}, defaulting to all 0")
                 actions_array = np.zeros(self.num_intersections, dtype=int)
             
-            # Update traffic lights based on actions
+            # Update traffic lights based on actions - direct control without timers
             for i in range(self.num_intersections):
-                # Only change the light if the timer has expired
-                if self.timers[i] <= 0:
-                    self.light_states[i] = actions_array[i]
-                    self.timers[i] = self.green_duration
-                else:
-                    # Decrease the timer
-                    self.timers[i] -= 1
+                # Direct control: immediately set light state to agent's action
+                self.light_states[i] = actions_array[i]
                     
             # Update duration trackers
             for i in range(self.num_intersections):
@@ -371,34 +373,115 @@ class TrafficSimulation(gym.Env):
     
     def _calculate_reward(self):
         """
-        Calculate reward based on traffic flow efficiency.
+        Calculate reward based on traffic flow efficiency with independent intersection control.
         
-        Reward components:
-        1. Negative reward for waiting cars (weighted by density)
-        2. Positive reward for cars passing through
-        3. Penalty for switching lights too frequently
+        This reward function:
+        1. Calculates rewards PER INTERSECTION separately
+        2. Focuses on local traffic conditions at each intersection
+        3. Rewards IMPROVEMENTS rather than absolute values
+        4. Provides clear feedback for good vs bad decisions
+        
+        Components for each intersection:
+        1. Waiting time reduction (relative to previous step)
+        2. Throughput increase (relative to previous step) 
+        3. Good decision reward based on traffic direction imbalance
+        4. Queue management penalty
         
         Returns:
-            float: The calculated reward
+            float: The combined reward across all intersections
         """
         try:
-            # Calculate waiting time penalty (scaled down to prevent extreme negative values)
-            waiting_penalty = -np.sum(self.waiting_time) * 0.05
-            throughput_reward = np.sum(self.cars_passed) * 0.05
+            # Initialize array to store rewards for each intersection
+            intersection_rewards = np.zeros(self.num_intersections)
             
-            # Add fairness component - penalize uneven queues
-            ns_density_avg = np.mean(self.traffic_density[:, 0])
-            ew_density_avg = np.mean(self.traffic_density[:, 1])
-            fairness_penalty = -abs(ns_density_avg - ew_density_avg) * 10.0
+            # Calculate rewards for each intersection separately
+            for i in range(self.num_intersections):
+                # --- 1. Waiting time change (reward reductions, penalize increases) ---
+                ns_waiting_change = self.waiting_time[i, 0] - self.prev_waiting_time[i, 0]
+                ew_waiting_change = self.waiting_time[i, 1] - self.prev_waiting_time[i, 1]
+                total_waiting_change = ns_waiting_change + ew_waiting_change
+                
+                # Negative change (reduction) is good, positive (increase) is bad
+                # Scale based on magnitude - small improvements get small rewards
+                waiting_reward = -total_waiting_change * 0.5
+                
+                # --- 2. Throughput change (reward increases) ---
+                ns_throughput_change = self.cars_passed[i, 0] - self.prev_cars_passed[i, 0]
+                ew_throughput_change = self.cars_passed[i, 1] - self.prev_cars_passed[i, 1]
+                total_throughput_change = ns_throughput_change + ew_throughput_change
+                
+                # Positive change is good - scale to be meaningful but not dominant
+                throughput_reward = total_throughput_change * 0.2
+                
+                # --- 3. Decision quality reward ---
+                # This rewards making good decisions based on traffic state
+                ns_density = self.traffic_density[i, 0]
+                ew_density = self.traffic_density[i, 1]
+                light_state = self.light_states[i]  # 0=NS green, 1=EW green
+                
+                # Measure traffic imbalance (difference between directions)
+                imbalance = ns_density - ew_density
+                
+                # Perfect decision: green for higher density direction
+                # Simplified binary reward for clear learning signal
+                if (light_state == 0 and imbalance > 0.1) or (light_state == 1 and imbalance < -0.1):
+                    # Good decision - clear density difference, correct light
+                    decision_reward = 1.0
+                elif abs(imbalance) <= 0.1:
+                    # Neutral decision - densities are similar, either light is reasonable
+                    decision_reward = 0.2
+                else:
+                    # Bad decision - giving green to less dense direction
+                    decision_reward = -1.0
+                
+                # --- 4. Queue management penalty ---
+                # Penalize high total queue length to avoid grid congestion
+                total_density = ns_density + ew_density
+                
+                # Only penalize when queues are getting significant
+                if total_density > 0.5:
+                    queue_penalty = -(total_density - 0.5) * 0.5
+                else:
+                    queue_penalty = 0
+                
+                # Combine all components for this intersection
+                # Balance the components to provide clear learning signal
+                intersection_rewards[i] = waiting_reward + throughput_reward + decision_reward + queue_penalty
             
-            # Add switching penalty to prevent rapid oscillation
-            switching_penalty = -self.light_switches * 0.01
+            # Log details of reward calculation periodically for debugging
+            if self.step_count % 100 == 0:
+                logger.debug(f"Intersection rewards: min={np.min(intersection_rewards):.2f}, "
+                             f"max={np.max(intersection_rewards):.2f}, "
+                             f"mean={np.mean(intersection_rewards):.2f}")
+                
+                # Log details for a sample intersection (first one)
+                i = 0
+                ns_density = self.traffic_density[i, 0]
+                ew_density = self.traffic_density[i, 1]
+                light_state = self.light_states[i]
+                waiting_change = self.waiting_time[i, 0] + self.waiting_time[i, 1] - (self.prev_waiting_time[i, 0] + self.prev_waiting_time[i, 1])
+                throughput_change = self.cars_passed[i, 0] + self.cars_passed[i, 1] - (self.prev_cars_passed[i, 0] + self.prev_cars_passed[i, 1])
+                
+                logger.debug(f"Sample intersection 0: NS={ns_density:.2f}, EW={ew_density:.2f}, "
+                            f"light={'NS' if light_state==0 else 'EW'}, "
+                            f"waiting_change={waiting_change:.2f}, throughput_change={throughput_change:.2f}, "
+                            f"reward={intersection_rewards[0]:.2f}")
             
-            return waiting_penalty + throughput_reward + fairness_penalty + switching_penalty
+            # Return the combined reward (simply average across intersections)
+            # This gives equal importance to all intersections regardless of grid size
+            avg_reward = np.mean(intersection_rewards)
+            
+            # Apply a baseline so good performance is positive, bad performance is negative
+            # This helps with interpreting the reward and for early stopping criteria
+            final_reward = avg_reward + 1.0
+            
+            return final_reward
             
         except Exception as e:
             logger.error(f"Error calculating reward: {e}")
-            return 0.0  # Safe default
+            import traceback
+            logger.error(traceback.format_exc())
+            return -5.0  # Return a moderate negative reward on error
     
     def _get_observation(self):
         """

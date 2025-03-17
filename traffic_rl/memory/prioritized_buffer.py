@@ -73,14 +73,21 @@ class PrioritizedReplayBuffer:
             # Ensure consistent shapes
             states_np = np.array([e.state for e in experiences])
             actions_np = np.array([e.action for e in experiences])
+            
+            # Handle actions with different shapes (for independent intersection control)
             if actions_np.ndim == 3:
-                actions_np = actions_np.squeeze(2)
+                # Only squeeze if the dimension has size 1
+                if actions_np.shape[2] == 1:
+                    actions_np = actions_np.squeeze(2)
+                # Otherwise, reshape to [batch_size, num_intersections]
+                # This preserves the independent actions for each intersection
             elif actions_np.ndim == 1:
                 actions_np = np.expand_dims(actions_np, 1)
                 
             rewards_np = np.array([e.reward for e in experiences])
             if rewards_np.ndim == 3:
-                rewards_np = rewards_np.squeeze(2)
+                if rewards_np.shape[2] == 1:  # Only squeeze if dim size is 1
+                    rewards_np = rewards_np.squeeze(2)
             elif rewards_np.ndim == 1:
                 rewards_np = np.expand_dims(rewards_np, 1)
                 
@@ -88,7 +95,8 @@ class PrioritizedReplayBuffer:
             
             dones_np = np.array([e.done for e in experiences])
             if dones_np.ndim == 3:
-                dones_np = dones_np.squeeze(2)
+                if dones_np.shape[2] == 1:  # Only squeeze if dim size is 1
+                    dones_np = dones_np.squeeze(2)
             elif dones_np.ndim == 1:
                 dones_np = np.expand_dims(dones_np, 1)
             
@@ -98,10 +106,10 @@ class PrioritizedReplayBuffer:
             rewards = torch.tensor(rewards_np, dtype=torch.float32)
             next_states = torch.tensor(next_states_np, dtype=torch.float32)
             dones = torch.tensor(dones_np, dtype=torch.float32)
-            weights = torch.tensor(weights, dtype=torch.float32)
+            weights_tensor = torch.tensor(weights, dtype=torch.float32).unsqueeze(1)
             
-            return (states, actions, rewards, next_states, dones, weights, indices)
-        
+            return (states, actions, rewards, next_states, dones, weights_tensor, indices)
+            
         except Exception as e:
             logger.error(f"Error sampling from prioritized buffer: {e}")
             import traceback
@@ -111,11 +119,55 @@ class PrioritizedReplayBuffer:
     def update_priorities(self, indices, td_errors):
         """Update priorities based on TD errors."""
         try:
+            # Pre-process TD errors if needed - convert to numpy float arrays
+            if isinstance(td_errors, torch.Tensor):
+                # If TD errors is a multi-dimensional tensor, take mean across non-batch dimensions
+                if td_errors.dim() > 1:
+                    # Average across all dimensions except batch dimension (dim 0)
+                    td_errors = td_errors.abs().mean(dim=tuple(range(1, td_errors.dim())))
+                
+                # Convert to numpy array
+                td_errors = td_errors.detach().cpu().numpy()
+            elif isinstance(td_errors, list):
+                td_errors = np.array(td_errors)
+            
+            # Convert to flat array if needed
+            if isinstance(td_errors, np.ndarray) and td_errors.ndim > 1:
+                td_errors = td_errors.mean(axis=tuple(range(1, td_errors.ndim)))
+            
+            # Process each index-error pair
             for idx, error in zip(indices, td_errors):
-                # Add small constant to ensure non-zero probability
-                self.priorities[idx] = abs(float(error)) + 1e-5
+                if idx >= len(self.priorities):
+                    # Skip if index is out of range (should not happen, but just in case)
+                    logger.warning(f"Priority index {idx} out of range {len(self.priorities)}")
+                    continue
+                
+                # Calculate priority - add small constant to avoid zero priority
+                try:
+                    # Try to directly convert to float - works for scalar values
+                    priority = float(abs(error) + 1e-5)
+                except (ValueError, TypeError):
+                    # If error is not a scalar, compute mean
+                    try:
+                        if hasattr(error, 'mean'):
+                            # For numpy arrays and similar
+                            priority = float(abs(error.mean()) + 1e-5)
+                        elif hasattr(error, '__iter__'):
+                            # For iterables like lists
+                            priority = float(abs(np.mean(error)) + 1e-5)
+                        else:
+                            # Fallback
+                            priority = 1.0
+                    except Exception as e:
+                        logger.warning(f"Error converting priority: {e}, using default")
+                        priority = 1.0
+                
+                self.priorities[idx] = priority
+                
         except Exception as e:
             logger.error(f"Error updating priorities: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     def __len__(self):
         """Return the current size of the buffer."""

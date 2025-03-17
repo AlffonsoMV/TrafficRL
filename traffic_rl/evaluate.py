@@ -48,24 +48,36 @@ def evaluate(agent, env, num_episodes=10):
             if hasattr(env, 'visualization') and env.visualization:
                 env.current_episode = episode + 1
                 env.current_step = step
-                
+            
+            # Get action from agent (eval_mode=True for no exploration)
+            # This works with both single actions and per-intersection actions
             action = agent.act(state, eval_mode=True)
-            next_state, reward, terminated, truncated, _ = env.step(action)
+            
+            # Take action in environment
+            next_state, reward, terminated, truncated, info = env.step(action)
             next_state = next_state.flatten()  # Flatten for NN input
             
-            # Render the environment if visualization is enabled
+            # Render if visualization is enabled
             if hasattr(env, 'visualization') and env.visualization:
                 env.render()
-                
+            
+            # Update state and reward
             state = next_state
             total_reward += reward
             
+            # Check if episode is done
             if terminated or truncated:
                 break
         
+        # Record total reward
         rewards.append(total_reward)
+        logger.info(f"Evaluation episode {episode+1}/{num_episodes} - Reward: {total_reward:.2f}")
     
-    return np.mean(rewards)
+    # Calculate average reward
+    avg_reward = np.mean(rewards)
+    logger.info(f"Evaluation complete - Average reward: {avg_reward:.2f}")
+    
+    return avg_reward
 
 def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=10):
     """

@@ -28,6 +28,7 @@ CONFIG = {
     "grid_size": 6,             # Size of the traffic grid (increased from 2x2 to 6x6)
     "max_cars": 30,             # Maximum number of cars per lane
     "green_duration": 1,       # Default green light duration (seconds)
+    "green_duration": 1,       # Default green light duration (seconds)
     "yellow_duration": 3,       # Default yellow light duration (seconds)
     "visualization": False,     # Enable visualization during training
     "device": "auto",           # Auto-detect device (CUDA, CPU, MPS)
@@ -61,10 +62,10 @@ CONFIG = {
         }
     },
     "advanced_options": {
-        "prioritized_replay": False,  # Turn off prioritized replay for simpler and faster training
+        "prioritized_replay": True,
         "per_alpha": 0.6,
         "per_beta": 0.4,
-        "dueling_network": False,  # Turn off dueling network for a simpler architecture
+        "dueling_network": True,
         "double_dqn": True
     },
     "random_seed": 42           # Random seed for reproducibility

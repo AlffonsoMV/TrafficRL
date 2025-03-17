@@ -31,67 +31,66 @@ class DQNAgent:
         """Initialize the agent."""
         self.state_size = state_size
         self.action_size = action_size
-        self.config = config
+        self.config = config if config else {}
         
-        # Get device - auto-detect if set to 'auto'
-        if config["device"] == "auto":
+        # Get device - auto-detect if set to 'auto' or if missing
+        if self.config.get("device", "auto") == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
-            self.device = torch.device(config["device"])
+            self.device = torch.device(self.config.get("device", "cpu"))
         logger.info(f"Using device: {self.device}")
         
         # Q-Networks - select based on config
-        if config.get("advanced_options", {}).get("dueling_network", False):
+        if self.config.get("advanced_options", {}).get("dueling_network", False):
             logger.info("Using Dueling DQN architecture")
-            self.local_network = DuelingDQN(state_size, action_size, hidden_dim=config.get("hidden_dim", 256)).to(self.device)
-            self.target_network = DuelingDQN(state_size, action_size, hidden_dim=config.get("hidden_dim", 256)).to(self.device)
+            self.local_network = DuelingDQN(state_size, action_size, hidden_dim=self.config.get("hidden_dim", 256)).to(self.device)
+            self.target_network = DuelingDQN(state_size, action_size, hidden_dim=self.config.get("hidden_dim", 256)).to(self.device)
         else:
             logger.info("Using standard DQN architecture")
-            self.local_network = DQN(state_size, action_size, hidden_dim=config.get("hidden_dim", 256)).to(self.device)
-            self.target_network = DQN(state_size, action_size, hidden_dim=config.get("hidden_dim", 256)).to(self.device)
+            self.local_network = DQN(state_size, action_size, hidden_dim=self.config.get("hidden_dim", 256)).to(self.device)
+            self.target_network = DQN(state_size, action_size, hidden_dim=self.config.get("hidden_dim", 256)).to(self.device)
         
-        # Optimizer with learning rate
+        # Initialize optimizer
         self.optimizer = optim.Adam(
-            self.local_network.parameters(), 
-            lr=config["learning_rate"],
-            weight_decay=config.get("weight_decay", 0)  # L2 regularization
+            self.local_network.parameters(),
+            lr=self.config.get("learning_rate", 0.001),
+            weight_decay=self.config.get("weight_decay", 0)
         )
         
-        # Learning rate scheduler for stability
-        self.scheduler = optim.lr_scheduler.StepLR(
-            self.optimizer, 
-            step_size=config.get("lr_step_size", 100),
-            gamma=config.get("lr_decay", 0.5)
-        )
-        
-        # Replay buffer - standard or prioritized
-        if config.get("advanced_options", {}).get("prioritized_replay", False):
-            logger.info("Using Prioritized Experience Replay")
+        # Initialize replay buffer
+        if self.config.get("advanced_options", {}).get("prioritized_replay", False):
+            logger.info("Using prioritized experience replay")
             self.memory = PrioritizedReplayBuffer(
-                config["buffer_size"], 
-                config["batch_size"],
-                alpha=config.get("per_alpha", 0.6),
-                beta=config.get("per_beta", 0.4)
+                self.config.get("buffer_size", 10000),
+                self.config.get("batch_size", 64),
+                self.config.get("alpha", 0.6)
             )
-            self.use_prioritized = True
+            self.priority_beta = self.config.get("beta", 0.4)
         else:
-            logger.info("Using standard Experience Replay")
-            self.memory = ReplayBuffer(config["buffer_size"], config["batch_size"])
-            self.use_prioritized = False
+            logger.info("Using standard experience replay")
+            self.memory = ReplayBuffer(
+                self.config.get("buffer_size", 10000),
+                self.config.get("batch_size", 64)
+            )
         
-        # Epsilon for exploration
-        self.epsilon = config["epsilon_start"]
-        self.epsilon_end = config["epsilon_end"]
-        self.epsilon_decay = config["epsilon_decay"]
+        # Initialize training parameters
+        self.gamma = self.config.get("gamma", 0.99)
+        self.tau = self.config.get("tau", 1e-3)
+        self.update_every = self.config.get("update_every", 4)
         
-        # Gradient clipping value
-        self.grad_clip = config.get("grad_clip", 1.0)
+        # Initialize exploration parameters
+        self.epsilon = self.config.get("epsilon_start", 1.0)
+        self.epsilon_end = self.config.get("epsilon_end", 0.01)
+        self.epsilon_decay = self.config.get("epsilon_decay", 0.995)
         
         # Initialize time step (for updating every UPDATE_EVERY steps)
         self.t_step = 0
         
-        # Training metrics
-        self.loss_history = []
+        # Initialize additional metrics
+        self.q_values = []
+        
+        # Gradient clipping value
+        self.grad_clip = self.config.get("grad_clip", 1.0)
     
     def step(self, state, action, reward, next_state, done):
         """Save experience in replay memory, and learn if it's time."""
@@ -197,7 +196,7 @@ class DQNAgent:
             
         try:
             # Handle different formats for prioritized vs standard replay
-            if self.use_prioritized:
+            if self.config.get("advanced_options", {}).get("prioritized_replay", False):
                 states, actions, rewards, next_states, dones, weights, indices = experiences
             else:
                 states, actions, rewards, next_states, dones = experiences
@@ -234,7 +233,7 @@ class DQNAgent:
                     Q_targets_next = self.target_network(next_states).detach().max(1)[0].unsqueeze(1)
             
             # Compute Q targets for current states
-            Q_targets = rewards + (self.config["gamma"] * Q_targets_next * (1 - dones))
+            Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones))
             
             # Get Q values from local model for all actions
             q_values = self.local_network(states)
@@ -247,7 +246,7 @@ class DQNAgent:
             loss = (weights * td_errors.pow(2)).mean()
             
             # Store loss for monitoring
-            self.loss_history.append(loss.item())
+            self.q_values.append(loss.item())
             
             # Minimize the loss
             self.optimizer.zero_grad()
@@ -258,19 +257,9 @@ class DQNAgent:
                 
             self.optimizer.step()
             
-            # Update learning rate if scheduler is enabled
-            if self.config.get("use_lr_scheduler", False):
-                self.scheduler.step()
-            
-            # Update priorities in prioritized replay buffer
-            if self.use_prioritized:
-                # Convert TD errors to numpy and update priorities
-                td_errors_np = td_errors.detach().cpu().numpy()
-                self.memory.update_priorities(indices, td_errors_np)
-            
             # Update target network
-            if self.t_step % self.config["target_update"] == 0:
-                self.target_network.load_state_dict(self.local_network.state_dict())
+            if self.t_step % self.update_every == 0:
+                self._update_target_network()
             
             # Update epsilon
             self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
@@ -290,9 +279,8 @@ class DQNAgent:
                 'local_network_state_dict': self.local_network.state_dict(),
                 'target_network_state_dict': self.target_network.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
-                'scheduler_state_dict': self.scheduler.state_dict() if hasattr(self, 'scheduler') else None,
                 'epsilon': self.epsilon,
-                'loss_history': self.loss_history
+                'q_values': self.q_values
             }, filename)
             logger.info(f"Model saved to {filename}")
             return True
@@ -367,27 +355,94 @@ class DQNAgent:
                 return False
         
         try:
-            # Load model components
-            self.local_network.load_state_dict(checkpoint['local_network_state_dict'])
-            self.target_network.load_state_dict(checkpoint['target_network_state_dict'])
-            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            
-            # Load scheduler if available
-            if hasattr(self, 'scheduler') and checkpoint['scheduler_state_dict'] is not None:
-                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-            
-            # Load epsilon but ensure it's within bounds
-            self.epsilon = max(
-                min(checkpoint['epsilon'], self.config["epsilon_start"]), 
-                self.config["epsilon_end"]
-            )
-            
-            # Load loss history if available
-            if 'loss_history' in checkpoint:
-                self.loss_history = checkpoint['loss_history']
+            # First, check what type of checkpoint this is
+            if isinstance(checkpoint, dict):
+                # If checkpoint is a dictionary, look for state dicts
+                # Try loading the local network state dict if it exists
+                if 'local_network_state_dict' in checkpoint:
+                    try:
+                        self.local_network.load_state_dict(checkpoint['local_network_state_dict'], strict=False)
+                        logger.info("Loaded local network from local_network_state_dict")
+                    except Exception as e:
+                        logger.warning(f"Error loading local network: {e}")
+                        
+                        # Try to create a new model that matches the saved architecture
+                        try:
+                            old_state_dict = checkpoint['local_network_state_dict']
+                            input_size = old_state_dict['fc1.weight'].shape[1]
+                            output_size = old_state_dict['fc3.weight'].shape[0]
+                            hidden_size = old_state_dict['fc1.weight'].shape[0]
+                            
+                            logger.info(f"Detected architecture: input={input_size}, hidden={hidden_size}, output={output_size}")
+                            
+                            # Create a new model with matching architecture
+                            from traffic_rl.models.dqn import DQN
+                            self.local_network = DQN(input_size, output_size, hidden_dim=hidden_size).to(self.device)
+                            self.target_network = DQN(input_size, output_size, hidden_dim=hidden_size).to(self.device)
+                            
+                            # Try loading again
+                            self.local_network.load_state_dict(checkpoint['local_network_state_dict'])
+                            logger.info("Successfully loaded model with adjusted architecture")
+                        except Exception as e2:
+                            logger.error(f"Failed to load with adjusted architecture: {e2}")
+                            return False
+                
+                # Try loading the target network state dict if it exists
+                if 'target_network_state_dict' in checkpoint:
+                    try:
+                        self.target_network.load_state_dict(checkpoint['target_network_state_dict'], strict=False)
+                        logger.info("Loaded target network from target_network_state_dict")
+                    except Exception as e:
+                        logger.warning(f"Error loading target network: {e}")
+                        # If we successfully loaded local network, copy it to target
+                        self.target_network.load_state_dict(self.local_network.state_dict())
+                # Else copy local to target if target wasn't loaded
+                elif hasattr(self, 'local_network'):
+                    self.target_network.load_state_dict(self.local_network.state_dict())
+                
+                # Load optimizer if it exists
+                if 'optimizer_state_dict' in checkpoint:
+                    try:
+                        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                        logger.info("Loaded optimizer state")
+                    except Exception as e:
+                        logger.warning(f"Error loading optimizer state: {e}")
+                
+                # Load epsilon
+                if 'epsilon' in checkpoint:
+                    self.epsilon = max(
+                        min(checkpoint['epsilon'], self.config.get("epsilon_start", 1.0)),
+                        self.config.get("epsilon_end", 0.01)
+                    )
+                    logger.info(f"Loaded epsilon: {self.epsilon}")
+                
+                # Load history data if available
+                if 'q_values' in checkpoint:
+                    self.q_values = checkpoint['q_values']
+                    logger.info("Loaded q-values history")
+                    
+            elif isinstance(checkpoint, torch.nn.Module):
+                # If checkpoint is a model, try to load it directly
+                logger.info("Checkpoint appears to be a direct model, loading state dict")
+                state_dict = checkpoint.state_dict()
+                self.local_network.load_state_dict(state_dict, strict=False)
+                self.target_network.load_state_dict(state_dict, strict=False)
+            else:
+                # Try loading as a direct state dict
+                logger.info("Attempting to load as direct state dict")
+                self.local_network.load_state_dict(checkpoint, strict=False)
+                self.target_network.load_state_dict(checkpoint, strict=False)
             
             logger.info(f"Model loaded successfully from {filename}")
             return True
         except Exception as e:
             logger.error(f"Error loading model components: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
+
+    def _update_target_network(self):
+        """Soft update model parameters: θ_target = τ*θ_local + (1 - τ)*θ_target"""
+        for target_param, local_param in zip(self.target_network.parameters(), self.local_network.parameters()):
+            target_param.data.copy_(self.tau * local_param.data + (1.0 - self.tau) * target_param.data)
+        logger.debug("Target network updated")

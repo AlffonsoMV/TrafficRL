@@ -39,6 +39,7 @@ from traffic_rl.utils.analysis import (
 )
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
 from traffic_rl.agents.dqn_agent import DQNAgent
+from traffic_rl.agents.ppo_agent import PPOAgent
 
 
 def set_random_seed(seed):
@@ -78,8 +79,8 @@ def train_command(args, logger):
     save_config(config, config_path)
     
     # Train agent
-    logger.info("Starting training...")
-    metrics = train(config, model_dir=args.output)
+    logger.info(f"Starting training with {args.agent_type} agent...")
+    metrics = train(config, model_dir=args.output, agent_type=args.agent_type)
     
     # Visualize results
     if not args.no_plots:
@@ -111,6 +112,7 @@ def train_command(args, logger):
     
     # Print summary
     logger.info("Training Summary:")
+    logger.info(f"  Agent Type: {args.agent_type}")
     logger.info(f"  Episodes Completed: {len(metrics['rewards'])}")
     logger.info(f"  Final Average Reward: {metrics['avg_rewards'][-1] if metrics['avg_rewards'] else 'N/A'}")
     logger.info(f"  Best Model Path: {os.path.join(args.output, 'best_model.pth')}")
@@ -324,8 +326,13 @@ def benchmark_command(args, logger):
     # Parse traffic patterns
     patterns = [p.strip() for p in args.patterns.split(',')]
     
+    # Parse model paths
+    model_paths = []
+    if args.model:
+        model_paths = args.model if isinstance(args.model, list) else [args.model]
+    
     # Create benchmark agents
-    agents = create_benchmark_agents(config, args.model)
+    agents = create_benchmark_agents(config, model_paths)
     
     # Run benchmark
     results = benchmark_agents(
@@ -364,12 +371,12 @@ def analyze_command(args, logger):
     # Parse model paths
     model_paths = []
     if args.model:
-        model_paths = [args.model]
+        model_paths = args.model if isinstance(args.model, list) else [args.model]
     
     # Parse training metrics paths
     training_metrics = []
     if args.metrics:
-        training_metrics = [args.metrics]
+        training_metrics = args.metrics if isinstance(args.metrics, list) else [args.metrics]
     
     # Parse traffic patterns
     if args.patterns:
@@ -387,8 +394,7 @@ def analyze_command(args, logger):
         benchmark_dir=args.benchmark_dir,
         output_dir=args.output,
         traffic_patterns=traffic_patterns,
-        num_episodes=args.episodes,
-        reuse_visualizations=False  # Always create new visualizations
+        num_episodes=args.episodes
     )
     
     if analysis_dir:
@@ -441,6 +447,26 @@ def parse_args():
     train_parser.add_argument("--visualization", dest="visualization", action="store_true", help="Enable visualization during training")
     train_parser.set_defaults(visualization=None)  # Default to None to use config value
     train_parser.add_argument("--no-plots", action="store_true", help="Disable plotting of training results")
+    train_parser.add_argument("--agent-type", type=str, choices=["dqn", "simple_dqn", "ppo"],
+                            default="dqn", help="Type of agent to train")
+    
+    # PPO-specific arguments
+    train_parser.add_argument("--ppo-learning-rate", type=float,
+                            help="PPO learning rate")
+    train_parser.add_argument("--ppo-gamma", type=float,
+                            help="PPO discount factor")
+    train_parser.add_argument("--ppo-gae-lambda", type=float,
+                            help="PPO GAE lambda parameter")
+    train_parser.add_argument("--ppo-clip-epsilon", type=float,
+                            help="PPO clipping parameter")
+    train_parser.add_argument("--ppo-c1", type=float,
+                            help="PPO value loss coefficient")
+    train_parser.add_argument("--ppo-c2", type=float,
+                            help="PPO entropy coefficient")
+    train_parser.add_argument("--ppo-batch-size", type=int,
+                            help="PPO batch size")
+    train_parser.add_argument("--ppo-n-epochs", type=int,
+                            help="Number of epochs for PPO updates")
     
     # Evaluate command
     eval_parser = subparsers.add_parser("evaluate", help="Evaluate a trained agent")

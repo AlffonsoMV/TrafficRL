@@ -8,11 +8,12 @@ import os
 import numpy as np
 import torch
 import logging
-import pygame  # Add pygame import
+import pygame
 
-# Import environment and agent
+# Import environment and agents
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
 from traffic_rl.agents.dqn_agent import DQNAgent
+from traffic_rl.agents.ppo_agent import PPOAgent
 
 logger = logging.getLogger("Evaluate")
 
@@ -67,7 +68,40 @@ def evaluate(agent, env, num_episodes=10):
     
     return np.mean(rewards)
 
-def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=10):
+def create_agent(agent_type, state_size, action_size, config):
+    """
+    Create an agent based on the specified type.
+    
+    Args:
+        agent_type: Type of agent to create ('dqn' or 'ppo')
+        state_size: Size of the state space
+        action_size: Size of the action space
+        config: Configuration dictionary
+    
+    Returns:
+        Agent instance
+    """
+    if agent_type.lower() == 'dqn':
+        return DQNAgent(state_size, action_size, config)
+    elif agent_type.lower() == 'ppo':
+        # Extract PPO-specific config
+        ppo_config = {
+            "learning_rate": config.get("ppo_learning_rate", 3e-4),
+            "gamma": config.get("ppo_gamma", 0.99),
+            "gae_lambda": config.get("ppo_gae_lambda", 0.95),
+            "clip_epsilon": config.get("ppo_clip_epsilon", 0.2),
+            "c1": config.get("ppo_c1", 1.0),
+            "c2": config.get("ppo_c2", 0.01),
+            "batch_size": config.get("ppo_batch_size", 64),
+            "n_epochs": config.get("ppo_n_epochs", 10),
+            "hidden_dim": config.get("hidden_dim", 256),
+            "device": config.get("device", "auto")
+        }
+        return PPOAgent(state_size, action_size, ppo_config)
+    else:
+        raise ValueError(f"Unsupported agent type: {agent_type}")
+
+def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=10, agent_type="dqn"):
     """
     Evaluate a trained agent from a model file.
     
@@ -76,6 +110,7 @@ def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=1
         model_path: Path to the model file
         traffic_pattern: Traffic pattern to use for evaluation
         num_episodes: Number of episodes to evaluate
+        agent_type: Type of agent to evaluate ('dqn' or 'ppo')
         
     Returns:
         Dictionary of evaluation results
@@ -104,7 +139,7 @@ def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=1
         action_size = env.action_space.n
         
         # Initialize agent
-        agent = DQNAgent(state_size, action_size, config)
+        agent = create_agent(agent_type, state_size, action_size, config)
         
         # Load model
         if not os.path.exists(model_path):
@@ -114,7 +149,7 @@ def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=1
         if not success:
             raise ValueError(f"Failed to load model from {model_path}")
         
-        logger.info(f"Evaluating agent from {model_path} with {traffic_pattern} traffic pattern...")
+        logger.info(f"Evaluating {agent_type} agent from {model_path} with {traffic_pattern} traffic pattern...")
         
         # Run evaluation
         rewards = []
@@ -196,7 +231,8 @@ def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=1
             "avg_density": float(avg_density),
             "traffic_pattern": traffic_pattern,
             "model_path": model_path,
-            "num_episodes": num_episodes
+            "num_episodes": num_episodes,
+            "agent_type": agent_type
         }
         
     except Exception as e:
@@ -223,10 +259,12 @@ if __name__ == "__main__":
     parser.add_argument("--pattern", type=str, default="uniform", help="Traffic pattern to evaluate")
     parser.add_argument("--episodes", type=int, default=10, help="Number of evaluation episodes")
     parser.add_argument("--output", type=str, default="results/evaluation.json", help="Output file for results")
+    parser.add_argument("--agent-type", type=str, choices=["dqn", "ppo"], default="dqn",
+                       help="Type of agent to evaluate")
     args = parser.parse_args()
     
     # Run evaluation
-    results = evaluate_agent(CONFIG, args.model, args.pattern, args.episodes)
+    results = evaluate_agent(CONFIG, args.model, args.pattern, args.episodes, args.agent_type)
     
     # Save results
     os.makedirs(os.path.dirname(args.output), exist_ok=True)

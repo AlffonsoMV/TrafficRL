@@ -7,6 +7,7 @@ Default configuration and configuration loading utilities.
 import os
 import json
 import logging
+import yaml
 
 logger = logging.getLogger("TrafficRL.Config")
 
@@ -42,6 +43,17 @@ CONFIG = {
     "lr_decay": 0.95,            # LR decay factor
     "clip_rewards": True,       # Whether to clip rewards
     "reward_scale": 0.1,        # Reward scaling factor
+    
+    # PPO-specific parameters
+    "ppo_learning_rate": 3e-4,  # PPO learning rate
+    "ppo_gamma": 0.99,          # PPO discount factor
+    "ppo_gae_lambda": 0.95,     # GAE lambda parameter
+    "ppo_clip_epsilon": 0.2,    # PPO clipping parameter
+    "ppo_c1": 1.0,              # Value loss coefficient
+    "ppo_c2": 0.01,             # Entropy coefficient
+    "ppo_batch_size": 64,       # PPO batch size
+    "ppo_n_epochs": 10,         # Number of epochs for PPO updates
+    
     "traffic_patterns": {
         "uniform": {
             "arrival_rate": 0.03,
@@ -57,6 +69,14 @@ CONFIG = {
             "midday_peak": 0.5,
             "peak_intensity": 1.5,
             "base_arrival": 0.02
+        },
+        "natural": {
+            "base_arrival": 0.02,
+            "peak_intensity": 2.0,
+            "weekend_intensity": 1.5,
+            "morning_peak": 0.33,
+            "evening_peak": 0.71,
+            "weekend_peak": 0.5
         }
     },
     "advanced_options": {
@@ -71,7 +91,7 @@ CONFIG = {
 
 def load_config(config_path=None):
     """
-    Load configuration from a JSON file, falling back to defaults if file not found.
+    Load configuration from a file (JSON or YAML), falling back to defaults if file not found.
     
     Args:
         config_path: Path to the configuration file
@@ -83,11 +103,21 @@ def load_config(config_path=None):
     
     if config_path and os.path.exists(config_path):
         try:
+            file_extension = os.path.splitext(config_path)[1].lower()
+            
             with open(config_path, 'r') as f:
-                loaded_config = json.load(f)
+                if file_extension == '.yaml' or file_extension == '.yml':
+                    loaded_config = yaml.safe_load(f)
+                    logger.info(f"Loaded YAML configuration from {config_path}")
+                else:
+                    # Default to JSON
+                    loaded_config = json.load(f)
+                    logger.info(f"Loaded JSON configuration from {config_path}")
+                
                 # Update default config with loaded values
-                config.update(loaded_config)
-                logger.info(f"Loaded configuration from {config_path}")
+                if loaded_config:
+                    config.update(loaded_config)
+                    logger.info(f"Configuration loaded successfully")
         except Exception as e:
             logger.error(f"Error loading configuration from {config_path}: {e}")
             logger.info("Falling back to default configuration")

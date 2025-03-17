@@ -120,39 +120,28 @@ class TrafficSimulation(gym.Env):
     
     def step(self, actions):
         """
-        Take a step in the environment given the actions.
+        Take a step in the environment by applying the traffic light actions.
         
         Args:
-            actions: Array of actions for each intersection (0=NS Green, 1=EW Green)
-                    or a single action to apply to all intersections
-        
+            actions: Actions to apply (either single action or list)
+            
         Returns:
-            observation: Current observation
-            reward: Reward from the action
-            terminated: Whether the episode is done
-            truncated: Whether the episode is truncated
-            info: Additional information
+            Tuple of (observation, reward, terminated, truncated, info)
         """
         try:
-            # Handle both scalar and array inputs for actions
-            if isinstance(actions, (int, np.integer, float, np.floating)):
-                # If a single action is provided, convert to array
-                actions_array = np.full(self.num_intersections, int(actions))
-            elif isinstance(actions, (list, np.ndarray)):
-                # If array-like with single value, convert to array of that value
-                if len(actions) == 1:
-                    actions_array = np.full(self.num_intersections, actions[0])
-                elif len(actions) != self.num_intersections:
-                    # If array with wrong length, broadcast or truncate
-                    logger.warning(f"Actions array length {len(actions)} doesn't match num_intersections {self.num_intersections}")
-                    actions_array = np.resize(actions, self.num_intersections)
-                else:
-                    # Correct length array
-                    actions_array = np.array(actions)
+            # Convert single action to array format
+            if np.isscalar(actions):
+                actions_array = np.full(self.num_intersections, actions)
             else:
-                # Fallback for unexpected action type
-                logger.warning(f"Unexpected action type: {type(actions)}, defaulting to all 0")
-                actions_array = np.zeros(self.num_intersections, dtype=int)
+                actions_array = np.array(actions)
+            
+            # Ensure the actions are valid
+            actions_array = np.clip(actions_array, 0, self.action_space.n - 1)
+            
+            # Count light switches
+            for i in range(self.num_intersections):
+                if actions_array[i] != self.light_states[i] and self.timers[i] <= 0:
+                    self.light_switches += 1
             
             # Update traffic lights based on actions
             for i in range(self.num_intersections):
@@ -172,11 +161,11 @@ class TrafficSimulation(gym.Env):
                 else:  # EW is green
                     self.ew_green_duration[i] += 1
                     self.ns_green_duration[i] = 0
-                
+            
             # Simulate traffic flow
             self._update_traffic()
             
-            # Calculate reward
+            # Calculate reward using the normalized reward function
             reward = self._calculate_reward()
             
             # Generate observation
@@ -203,13 +192,9 @@ class TrafficSimulation(gym.Env):
             return observation, reward, terminated, truncated, info
             
         except Exception as e:
-            logger.error(f"Error in environment step: {e}")
-            import traceback
+            logger.error(f"Error in step() method: {e}")
             logger.error(traceback.format_exc())
-            
-            # Return a safe fallback state
-            fallback_obs = self._get_observation()
-            return fallback_obs, 0.0, True, False, {"error": str(e)}
+            return self._get_observation(), 0, True, False, {}
     
     def _update_traffic(self):
         """Simulate traffic flow and update densities with more realistic behavior."""
@@ -267,7 +252,75 @@ class TrafficSimulation(gym.Env):
             time_of_day = (self.sim_time % 1440) / 1440.0  # Normalize to [0,1]
             
             # Get traffic pattern configuration
-            if self.traffic_pattern == "rush_hour":
+            if self.traffic_pattern == "natural":
+                # Implementation of natural traffic pattern that simulates real-life conditions
+                # Determine if it's a weekday (0-4) or weekend (5-6) based on simulation time
+                day_of_week = (self.sim_time // 1440) % 7  # 0=Monday, 6=Sunday
+                is_weekend = day_of_week >= 5
+                
+                # Base traffic parameters
+                base_arrival = self.traffic_config.get("base_arrival", 0.02)
+                peak_intensity = self.traffic_config.get("peak_intensity", 2.0)
+                weekend_intensity = self.traffic_config.get("weekend_intensity", 1.5)
+                
+                # Rush hour times (normalized to [0,1])
+                morning_peak = self.traffic_config.get("morning_peak", 0.33)  # ~8am
+                evening_peak = self.traffic_config.get("evening_peak", 0.71)  # ~5pm
+                weekend_peak = self.traffic_config.get("weekend_peak", 0.5)   # ~noon
+                
+                # Night-time reduction factor
+                night_factor = 0.3 + 0.7 * (
+                    np.sin(np.pi * (time_of_day + 0.25)) ** 2  # Higher during day, lower at night
+                )
+                
+                if is_weekend:
+                    # Weekend pattern: one main peak around noon, generally lower traffic
+                    rush_hour_factor = weekend_intensity * np.exp(-10 * (time_of_day - weekend_peak)**2)
+                else:
+                    # Weekday pattern: morning and evening rush hours
+                    rush_hour_factor = peak_intensity * (
+                        np.exp(-20 * (time_of_day - morning_peak)**2) +  # Morning peak
+                        np.exp(-20 * (time_of_day - evening_peak)**2)    # Evening peak
+                    )
+                
+                # Apply day/night cycle to the traffic
+                rush_hour_factor *= night_factor
+                
+                # Random traffic events (accidents, construction, etc.)
+                if self.np_random.random() < 0.005:  # 0.5% chance of traffic event
+                    event_duration = self.np_random.randint(10, 50)  # Duration in simulation steps
+                    event_location = self.np_random.randint(0, self.num_intersections)
+                    event_intensity = self.np_random.uniform(1.5, 3.0)
+                    
+                    # If an event affects this time step, increase traffic
+                    if hasattr(self, 'traffic_events'):
+                        # Check if there are active events
+                        active_events = [(loc, dur - 1, intens) for loc, dur, intens in self.traffic_events 
+                                         if dur > 0]
+                        self.traffic_events = active_events
+                        
+                        # Apply effect of active events
+                        for loc, dur, intens in self.traffic_events:
+                            if dur > 0:
+                                # Increase traffic density near the event location
+                                affected_radius = 2  # Intersections affected around event
+                                for i in range(self.num_intersections):
+                                    # Calculate "distance" to event
+                                    event_row, event_col = loc // self.grid_size, loc % self.grid_size
+                                    i_row, i_col = i // self.grid_size, i % self.grid_size
+                                    manhattan_dist = abs(event_row - i_row) + abs(event_col - i_col)
+                                    
+                                    if manhattan_dist <= affected_radius:
+                                        # The closer to the event, the higher the impact
+                                        impact = intens * (1 - manhattan_dist / (affected_radius + 1))
+                                        rush_hour_factor += impact
+                    else:
+                        self.traffic_events = []
+                    
+                    # Add new event
+                    self.traffic_events.append((event_location, event_duration, event_intensity))
+                
+            elif self.traffic_pattern == "rush_hour":
                 # Morning rush hour around 8am (time_of_day ~= 0.33)
                 # Evening rush hour around 5pm (time_of_day ~= 0.71)
                 morning_peak = self.traffic_config.get("morning_peak", 0.33)
@@ -374,27 +427,33 @@ class TrafficSimulation(gym.Env):
         Calculate reward based on traffic flow efficiency.
         
         Reward components:
-        1. Negative reward for waiting cars (weighted by density)
-        2. Positive reward for cars passing through
-        3. Penalty for switching lights too frequently
+        1. Negative reward for waiting cars (normalized by number of cars in the system)
+        2. Positive reward for throughput (normalized by total capacity)
+        3. Fairness penalty (normalized by total traffic density)
+        4. Penalty for switching lights too frequently
         
         Returns:
             float: The calculated reward
         """
         try:
-            # Calculate waiting time penalty (scaled down to prevent extreme negative values)
-            waiting_penalty = -np.sum(self.waiting_time) * 0.05
-            throughput_reward = np.sum(self.cars_passed) * 0.05
+            # Calculate number of cars in the system
+            total_density = np.sum(self.traffic_density)
+            total_capacity = self.num_intersections * 2  # Maximum capacity (2 directions per intersection)
+            number_of_cars = total_density * self.max_cars  # Convert density to actual car count
             
-            # Add fairness component - penalize uneven queues
+            # Calculate total cars that passed through
+            total_cars_passed = np.sum(self.cars_passed)
+            
+            # Calculate average densities for fairness component
             ns_density_avg = np.mean(self.traffic_density[:, 0])
             ew_density_avg = np.mean(self.traffic_density[:, 1])
-            fairness_penalty = -abs(ns_density_avg - ew_density_avg) * 10.0
             
-            # Add switching penalty to prevent rapid oscillation
-            switching_penalty = -self.light_switches * 0.01
+            # Calculate reward components using normalized metrics
+            reward = (
+                - (np.sum(self.waiting_time) / (number_of_cars + 1e-5)) * 10.0          # Waiting time penalty
+            )
             
-            return waiting_penalty + throughput_reward + fairness_penalty + switching_penalty
+            return reward
             
         except Exception as e:
             logger.error(f"Error calculating reward: {e}")
@@ -594,3 +653,52 @@ class TrafficSimulation(gym.Env):
         """Close the environment."""
         if self.visualization:
             pygame.quit()
+
+    def compute_simple_reward(self, info):
+        """
+        Compute a normalized reward that's independent of traffic volume.
+        
+        This reward function is designed to be comparable across different traffic patterns
+        by normalizing all metrics relative to traffic volume.
+        
+        Args:
+            info: Dictionary containing environment information
+            
+        Returns:
+            float: Computed normalized reward
+        """
+        # Get metrics from info
+        waiting_time = info.get('average_waiting_time', 0)
+        throughput = info.get('total_cars_passed', 0)
+        traffic_density = info.get('traffic_density', 0)
+        
+        # Get reward parameters from config
+        waiting_weight = self.config.get('waiting_time_weight', -1.0)
+        throughput_weight = self.config.get('throughput_weight', 1.0)
+        
+        # Calculate theoretical values
+        total_capacity = self.num_intersections * 2 * self.max_cars  # Total capacity
+        number_of_cars = traffic_density * self.max_cars * self.num_intersections * 2  # Est. number of cars
+        
+        # Calculate normalized components
+        # Normalize waiting time by number of cars
+        if number_of_cars > 0:
+            normalized_waiting = waiting_time / (number_of_cars + 1e-5)
+        else:
+            normalized_waiting = 0
+        
+        # Normalize throughput by capacity
+        normalized_throughput = throughput / (total_capacity + 1e-5)
+        
+        # Calculate reward components
+        waiting_reward = waiting_weight * normalized_waiting * 10.0
+        throughput_reward = throughput_weight * normalized_throughput * 20.0
+        
+        # Combine rewards
+        reward = waiting_reward + throughput_reward
+        
+        # Apply any scaling from config
+        if 'reward_scale' in self.config:
+            reward *= self.config.get('reward_scale', 1.0)
+        
+        return reward

@@ -11,23 +11,63 @@ import torch
 import logging
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-import pygame  # Add pygame import
+import pygame
+import argparse
+import yaml
 
-# Import environment and agent
+# Import environment and agents
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
 from traffic_rl.agents.dqn_agent import DQNAgent
+from traffic_rl.agents.ppo_agent import PPOAgent
+from traffic_rl.agents.simple_dqn_agent import SimpleDQNAgent
 from traffic_rl.utils.visualization import visualize_results
 from traffic_rl.evaluate import evaluate
 
 logger = logging.getLogger("TrafficRL.Train")
 
-def train(config, model_dir="models"):
+def create_agent(agent_type, state_size, action_size, config):
+    """
+    Create an agent based on the specified type.
+    
+    Args:
+        agent_type: Type of agent to create ('dqn', 'simple_dqn', or 'ppo')
+        state_size: Size of the state space
+        action_size: Size of the action space
+        config: Configuration dictionary
+    
+    Returns:
+        Agent instance
+    """
+    if agent_type.lower() == 'dqn':
+        return DQNAgent(state_size, action_size, config)
+    elif agent_type.lower() == 'simple_dqn':
+        return SimpleDQNAgent(state_size, action_size, config)
+    elif agent_type.lower() == 'ppo':
+        # Extract PPO-specific config
+        ppo_config = {
+            "learning_rate": config.get("ppo_learning_rate", 3e-4),
+            "gamma": config.get("ppo_gamma", 0.99),
+            "gae_lambda": config.get("ppo_gae_lambda", 0.95),
+            "clip_epsilon": config.get("ppo_clip_epsilon", 0.2),
+            "c1": config.get("ppo_c1", 1.0),
+            "c2": config.get("ppo_c2", 0.01),
+            "batch_size": config.get("ppo_batch_size", 64),
+            "n_epochs": config.get("ppo_n_epochs", 10),
+            "hidden_dim": config.get("hidden_dim", 256),
+            "device": config.get("device", "auto")
+        }
+        return PPOAgent(state_size, action_size, ppo_config)
+    else:
+        raise ValueError(f"Unsupported agent type: {agent_type}")
+
+def train(config, model_dir="models", agent_type="dqn"):
     """
     Train the agent with improved monitoring and stability features.
     
     Args:
         config: Configuration dict
         model_dir: Directory to save models
+        agent_type: Type of agent to train ('dqn' or 'ppo')
     
     Returns:
         Dictionary of training history and metrics
@@ -54,7 +94,7 @@ def train(config, model_dir="models"):
         action_size = env.action_space.n
         
         # Initialize agent
-        agent = DQNAgent(state_size, action_size, config)
+        agent = create_agent(agent_type, state_size, action_size, config)
         
         # Initialize training metrics
         metrics = {
@@ -62,26 +102,31 @@ def train(config, model_dir="models"):
             "avg_rewards": [],
             "eval_rewards": [],
             "loss_values": [],
-            "epsilon_values": [],
             "learning_rates": [],
             "waiting_times": [],
             "throughput": [],
             "training_time": 0
         }
         
+        # Add agent-specific metrics
+        if agent_type.lower() == 'dqn':
+            metrics["epsilon_values"] = []
+        elif agent_type.lower() == 'ppo':
+            metrics["policy_loss"] = []
+            metrics["value_loss"] = []
+            metrics["entropy_loss"] = []
+        
         # Initialize early stopping variables
         best_eval_reward = -float('inf')
         patience = config.get("early_stopping_patience", 100)
         patience_counter = 0
         
-        # Initialize dynamic traffic pattern
-        current_pattern = "uniform"  # Start with uniform pattern
-        pattern_schedule = {
-            0: "uniform",         # Start with uniform
-            100: "rush_hour",     # Switch to rush hour after 100 episodes
-            200: "weekend",       # Switch to weekend after 200 episodes
-            300: "uniform"        # Back to uniform after 300 episodes
-        }
+        # Initialize traffic pattern to natural only
+        current_pattern = "natural"  # Use only the natural pattern
+        pattern_config = config["traffic_patterns"].get(current_pattern, config["traffic_patterns"]["uniform"])
+        logger.info(f"Using only the natural traffic pattern for the entire training")
+        env.traffic_pattern = current_pattern
+        env.traffic_config = pattern_config
         
         # Training progress tracking
         progress_bar = None
@@ -95,14 +140,6 @@ def train(config, model_dir="models"):
         
         # Training loop
         for episode in range(1, config["num_episodes"] + 1):
-            # Check if we need to switch traffic pattern
-            if episode in pattern_schedule:
-                current_pattern = pattern_schedule[episode]
-                pattern_config = config["traffic_patterns"].get(current_pattern, config["traffic_patterns"]["uniform"])
-                logger.info(f"Switching to {current_pattern} traffic pattern at episode {episode}")
-                env.traffic_pattern = current_pattern
-                env.traffic_config = pattern_config
-            
             # Reset environment
             state, _ = env.reset()
             state = state.flatten()  # Flatten for NN input
@@ -176,21 +213,29 @@ def train(config, model_dir="models"):
             metrics["waiting_times"].append(avg_waiting_time)
             metrics["throughput"].append(avg_throughput)
             
-            # Record epsilon and learning rate
-            metrics["epsilon_values"].append(agent.epsilon)
+            # Record agent-specific metrics
+            if agent_type.lower() == 'dqn':
+                metrics["epsilon_values"].append(agent.epsilon)
+            elif agent_type.lower() == 'ppo':
+                # Record PPO-specific metrics if available
+                if hasattr(agent, 'policy_loss_history'):
+                    metrics["policy_loss"].append(np.mean(agent.policy_loss_history[-episode_steps:]) if episode_steps > 0 else 0)
+                if hasattr(agent, 'value_loss_history'):
+                    metrics["value_loss"].append(np.mean(agent.value_loss_history[-episode_steps:]) if episode_steps > 0 else 0)
+                if hasattr(agent, 'entropy_loss_history'):
+                    metrics["entropy_loss"].append(np.mean(agent.entropy_loss_history[-episode_steps:]) if episode_steps > 0 else 0)
+            
+            # Record learning rate
             current_lr = agent.optimizer.param_groups[0]['lr']
             metrics["learning_rates"].append(current_lr)
             
-            # Record loss values if available
-            if hasattr(agent, 'loss_history') and agent.loss_history:
-                # Get average loss over this episode
-                metrics["loss_values"].append(np.mean(agent.loss_history[-episode_steps:]) if episode_steps > 0 else 0)
-            
             # Log progress
-            logger.info(f"Episode {episode}/{config['num_episodes']} - "
-                       f"Reward: {total_reward:.2f}, Avg Reward: {avg_reward:.2f}, "
-                       f"Epsilon: {agent.epsilon:.4f}, LR: {current_lr:.6f}, "
-                       f"Traffic: {current_pattern}")
+            log_msg = f"Episode {episode}/{config['num_episodes']} - "
+            log_msg += f"Reward: {total_reward:.2f}, Avg Reward: {avg_reward:.2f}, "
+            if agent_type.lower() == 'dqn':
+                log_msg += f"Epsilon: {agent.epsilon:.4f}, "
+            log_msg += f"LR: {current_lr:.6f}, Traffic: {current_pattern}"
+            logger.info(log_msg)
             
             # Update progress bar
             if progress_bar is not None:
@@ -198,7 +243,6 @@ def train(config, model_dir="models"):
                 progress_bar.set_postfix({
                     'reward': f"{total_reward:.2f}",
                     'avg': f"{avg_reward:.2f}",
-                    'eps': f"{agent.epsilon:.2f}",
                     'pattern': current_pattern
                 })
             
@@ -249,71 +293,52 @@ def train(config, model_dir="models"):
         # Close the environment
         env.close()
         
-        # Close progress bar
-        if progress_bar is not None:
-            progress_bar.close()
-        
-        # Save final model
-        try:
-            model_path = os.path.join(model_dir, "final_model.pth")
-            agent.save(model_path)
-            logger.info("Final model saved successfully")
-        except Exception as e:
-            logger.error(f"Failed to save final model: {e}")
-        
         return metrics
-    
-    except KeyboardInterrupt:
-        logger.info("Training interrupted by user")
-        # Save the model before exiting
-        try:
-            model_path = os.path.join(model_dir, "interrupted_model.pth")
-            agent.save(model_path)
-            logger.info(f"Interrupted model saved to {model_path}")
-        except Exception as e:
-            logger.error(f"Failed to save interrupted model: {e}")
         
-        # Close the environment
-        env.close()
-        
-        # Close progress bar
-        if progress_bar is not None:
-            progress_bar.close()
-            
-        return metrics
-    
     except Exception as e:
         logger.error(f"Training failed: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        
-        # Close the environment
-        try:
-            env.close()
-        except Exception:
-            pass
-        
-        # Close progress bar
-        if progress_bar is not None:
-            try:
-                progress_bar.close()
-            except Exception:
-                pass
-                
         raise
 
 
 if __name__ == "__main__":
-    from config import CONFIG
-    
     # Configure logging
     logging.basicConfig(level=logging.INFO)
     
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Train RL agent for traffic control')
+    parser.add_argument('--config', type=str, required=True, help='Path to configuration YAML file')
+    parser.add_argument('--agent-type', type=str, default='dqn', choices=['dqn', 'simple_dqn', 'ppo'], 
+                        help='Type of agent to train (dqn, simple_dqn, or ppo)')
+    parser.add_argument('--output-dir', type=str, default='results', help='Directory to save results')
+    args = parser.parse_args()
+    
+    # Load configuration
+    try:
+        with open(args.config, 'r') as f:
+            config = yaml.safe_load(f)
+        logger.info(f"Loaded configuration from {args.config}")
+    except Exception as e:
+        logger.error(f"Failed to load configuration: {e}")
+        exit(1)
+    
+    # Create output directory structure
+    model_dir = os.path.join(args.output_dir, args.agent_type)
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+    
     # Train agent
-    metrics = train(CONFIG)
+    logger.info(f"Starting training for {args.agent_type} agent...")
+    metrics = train(config, model_dir=model_dir, agent_type=args.agent_type)
     
     # Visualize results
-    visualize_results(metrics["rewards"], metrics["avg_rewards"], save_path="results/training_progress.png")
+    os.makedirs(os.path.join(args.output_dir, args.agent_type, 'plots'), exist_ok=True)
+    visualize_results(
+        metrics["rewards"], 
+        metrics["avg_rewards"], 
+        save_path=os.path.join(args.output_dir, args.agent_type, 'plots', 'training_progress.png')
+    )
+    
+    logger.info(f"Training completed. Models saved to {model_dir}")
     
     
     

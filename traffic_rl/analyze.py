@@ -13,6 +13,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
+import torch
 
 # Import modules
 from traffic_rl.config import load_config
@@ -24,8 +25,113 @@ from traffic_rl.utils.analysis import (
     create_comprehensive_report
 )
 from traffic_rl.utils.benchmark import benchmark_agents, create_benchmark_agents
+from traffic_rl.agents.dqn_agent import DQNAgent
+from traffic_rl.agents.ppo_agent import PPOAgent
+from traffic_rl.environment.traffic_simulation import TrafficSimulation
 
 logger = logging.getLogger("Analyze")
+
+def determine_agent_type(model_path):
+    """Determine the type of agent from the model file."""
+    try:
+        checkpoint = torch.load(model_path, map_location='cpu')
+        if 'policy_state_dict' in checkpoint:
+            return 'ppo'
+        elif 'local_network_state_dict' in checkpoint:
+            return 'dqn'
+        else:
+            return 'unknown'
+    except:
+        return 'unknown'
+
+def analyze_agent_behavior(agent, env, agent_output, agent_type='dqn'):
+    """Analyze agent behavior based on agent type."""
+    state_size = env.observation_space.shape[0] * env.observation_space.shape[1]
+    action_size = env.action_space.n
+    
+    # Create sample states
+    grid_size = 10
+    ns_densities = np.linspace(0, 1, grid_size)
+    ew_densities = np.linspace(0, 1, grid_size)
+    light_states = [0, 1]  # 0=NS Green, 1=EW Green
+    
+    all_states = []
+    all_values = []  # Can be Q-values for DQN or action probabilities for PPO
+    
+    for light_state in light_states:
+        states_grid = np.zeros((grid_size, grid_size, state_size))
+        values_grid = np.zeros((grid_size, grid_size, action_size))
+        
+        for i, ns in enumerate(ns_densities):
+            for j, ew in enumerate(ew_densities):
+                state = np.zeros(state_size)
+                state[0] = ns
+                state[1] = ew
+                state[2] = light_state
+                
+                if light_state == 0:
+                    state[3] = 0.1 * ns
+                    state[4] = 0.5 * ew
+                else:
+                    state[3] = 0.5 * ns
+                    state[4] = 0.1 * ew
+                
+                states_grid[i, j] = state
+                
+                # Get values based on agent type
+                if agent_type == 'dqn':
+                    values = agent.get_q_values(state)
+                else:  # PPO
+                    with torch.no_grad():
+                        state_tensor = torch.FloatTensor(state).unsqueeze(0).to(agent.device)
+                        action_probs, state_value = agent.policy(state_tensor)
+                        values = action_probs.squeeze().cpu().numpy()
+                
+                values_grid[i, j] = values
+        
+        all_states.append(states_grid)
+        all_values.append(values_grid)
+    
+    # Create visualizations
+    viz_dir = os.path.join(agent_output, "decision_analysis")
+    os.makedirs(viz_dir, exist_ok=True)
+    
+    # Plot decision boundaries
+    for idx, light_state in enumerate(light_states):
+        plt.figure(figsize=(10, 8))
+        plt.title(f"{'NS Green' if light_state == 0 else 'EW Green'} - Action Preferences")
+        
+        # Plot the preferred action at each state
+        preferred_actions = np.argmax(all_values[idx], axis=-1)
+        plt.imshow(preferred_actions, extent=[0, 1, 0, 1], origin='lower')
+        
+        plt.colorbar(label='Preferred Action (0=NS, 1=EW)')
+        plt.xlabel('EW Density')
+        plt.ylabel('NS Density')
+        plt.savefig(os.path.join(viz_dir, f'decision_boundary_light_{light_state}.png'))
+        plt.close()
+        
+        # Plot action probabilities/Q-values
+        for action in range(action_size):
+            plt.figure(figsize=(10, 8))
+            plt.title(f"{'NS Green' if light_state == 0 else 'EW Green'} - {'Q-Values' if agent_type == 'dqn' else 'Action Probabilities'} for Action {action}")
+            
+            plt.imshow(all_values[idx][:, :, action], extent=[0, 1, 0, 1], origin='lower')
+            plt.colorbar(label='Value')
+            plt.xlabel('EW Density')
+            plt.ylabel('NS Density')
+            plt.savefig(os.path.join(viz_dir, f'values_light_{light_state}_action_{action}.png'))
+            plt.close()
+    
+    return {
+        "decision_boundaries": {
+            str(light_state): {
+                "states": all_states[i].tolist(),
+                "values": all_values[i].tolist()
+            } for i, light_state in enumerate(light_states)
+        },
+        "visualization_dir": viz_dir
+    }
 
 def run_comprehensive_analysis(
     config, 
@@ -210,6 +316,8 @@ def run_comprehensive_analysis(
         if model_paths:
             logger.info("Analyzing agent behavior...")
             
+            env = TrafficSimulation(config=config, visualization=False)
+            
             for i, model_path in enumerate(model_paths):
                 if os.path.exists(model_path):
                     # Extract model name from path
@@ -220,100 +328,30 @@ def run_comprehensive_analysis(
                     agent_output = os.path.join(analysis_dir, f"agent_{model_name}")
                     os.makedirs(agent_output, exist_ok=True)
                     
-                    # Generate agent analysis data including Q-value visualization
-                    from traffic_rl.agents.dqn_agent import DQNAgent
-                    from traffic_rl.environment.traffic_simulation import TrafficSimulation
-                    from traffic_rl.utils.analysis import visualize_learning_progress
+                    # Determine agent type
+                    agent_type = determine_agent_type(model_path)
+                    logger.info(f"Detected agent type: {agent_type}")
                     
-                    # Initialize environment to get state and action sizes
-                    env = TrafficSimulation(config=config, visualization=False)
+                    # Initialize appropriate agent
                     state_size = env.observation_space.shape[0] * env.observation_space.shape[1]
                     action_size = env.action_space.n
                     
-                    # Load the agent
-                    agent = DQNAgent(state_size, action_size, config)
+                    if agent_type == 'ppo':
+                        agent = PPOAgent(state_size, action_size, config)
+                    else:  # Default to DQN
+                        agent = DQNAgent(state_size, action_size, config)
+                    
                     if agent.load(model_path):
-                        logger.info(f"Successfully loaded model from {model_path} for Q-value analysis")
+                        logger.info(f"Successfully loaded model from {model_path}")
+                        agent_analysis = analyze_agent_behavior(agent, env, agent_output, agent_type)
                         
-                        # Generate sample states to evaluate Q-values
-                        q_values_history = []
-                        states_history = []
+                        report_data["agent_analysis"][model_name] = {
+                            "analysis": agent_analysis,
+                            "output_dir": agent_output,
+                            "agent_type": agent_type
+                        }
                         
-                        # Create a grid of states with different traffic densities
-                        grid_size = 10
-                        ns_densities = np.linspace(0, 1, grid_size)
-                        ew_densities = np.linspace(0, 1, grid_size)
-                        
-                        # Create states for both light states (NS green and EW green)
-                        light_states = [0, 1]  # 0=NS Green, 1=EW Green
-                        
-                        # Create a more comprehensive set of states
-                        all_states = []
-                        all_q_values = []
-                        
-                        for light_state in light_states:
-                            # Create a 2D grid of states for this light state
-                            states_grid = np.zeros((grid_size, grid_size, state_size))
-                            q_values_grid = np.zeros((grid_size, grid_size, action_size))
-                            
-                            for i, ns in enumerate(ns_densities):
-                                for j, ew in enumerate(ew_densities):
-                                    # Create a more realistic state representation
-                                    state = np.zeros(state_size)
-                                    
-                                    # First intersection state (we focus on one intersection)
-                                    # [NS_density, EW_density, light_state, NS_waiting, EW_waiting]
-                                    state[0] = ns  # North-South density
-                                    state[1] = ew  # East-West density
-                                    state[2] = light_state  # Current light state
-                                    
-                                    # Set waiting times proportional to density and light state
-                                    if light_state == 0:  # NS Green
-                                        state[3] = 0.1 * ns  # Low NS waiting (green light)
-                                        state[4] = 0.5 * ew  # Higher EW waiting (red light)
-                                    else:  # EW Green
-                                        state[3] = 0.5 * ns  # Higher NS waiting (red light)
-                                        state[4] = 0.1 * ew  # Low EW waiting (green light)
-                                    
-                                    # Store the state
-                                    states_grid[i, j] = state
-                                    
-                                    # Get Q-values from the agent
-                                    q_value = agent.get_q_values(state)
-                                    q_values_grid[i, j] = q_value
-                            
-                            all_states.append(states_grid)
-                            all_q_values.append(q_values_grid)
-                        
-                        # Add to history
-                        states_history.append(all_states)
-                        q_values_history.append(all_q_values)
-                        
-                        # Visualize learning progress with Q-values
-                        q_viz_dir = os.path.join(agent_output, "q_values")
-                        os.makedirs(q_viz_dir, exist_ok=True)
-                        visualize_learning_progress(q_values_history, states_history, save_dir=q_viz_dir)
-                        logger.info(f"Q-value visualization saved to {q_viz_dir}")
-                    
-                    # Create agent analysis data
-                    agent_analysis = {
-                        "model_path": model_path,
-                        "model_name": model_name,
-                        "decision_boundaries": {},  # Would be populated by actual analysis
-                        "q_values_dir": os.path.join(agent_output, "q_values") if hasattr(agent, 'local_network') else None
-                    }
-                    
-                    # Save agent analysis
-                    with open(os.path.join(agent_output, "agent_analysis.json"), 'w') as f:
-                        json.dump(agent_analysis, f, indent=4)
-                    
-                    # Add to report data
-                    report_data["agent_analysis"][model_name] = {
-                        "analysis": agent_analysis,
-                        "output_dir": agent_output
-                    }
-                    
-                    logger.info(f"Agent analysis for {model_name} completed.")
+                        logger.info(f"Agent analysis for {model_name} completed.")
         
         # 5. Generate comprehensive report
         logger.info("Generating comprehensive report...")

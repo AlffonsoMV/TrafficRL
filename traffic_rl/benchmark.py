@@ -18,6 +18,8 @@ from datetime import datetime
 # Import environment and agents
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
 from traffic_rl.agents.dqn_agent import DQNAgent
+from traffic_rl.agents.simple_dqn_agent import SimpleDQNAgent
+from traffic_rl.agents.ppo_agent import PPOAgent
 from traffic_rl.agents.fixed_timing_agent import FixedTimingAgent, AdaptiveTimingAgent
 from traffic_rl.agents.base import BaseAgent, RandomAgent
 from traffic_rl.utils.analysis import comparative_analysis
@@ -102,11 +104,22 @@ def benchmark_agents(config, agents_to_benchmark, traffic_patterns, num_episodes
                 agent = None
                 
                 if isinstance(agent_info, str):
-                    # Agent info is a model path, so load a DQN agent
-                    agent = DQNAgent(state_size, action_size, config)
-                    if not agent.load(agent_info):
-                        logger.error(f"Failed to load model for agent '{agent_name}' from {agent_info}")
-                        continue
+                    # Agent info is a model path, so load the appropriate agent
+                    if "simple_dqn" in agent_info.lower():
+                        agent = SimpleDQNAgent(state_size, action_size, config.get("agents", {}).get("simple_dqn", {}))
+                        if not agent.load(agent_info):
+                            logger.error(f"Failed to load SimpleDQN model for agent '{agent_name}' from {agent_info}")
+                            continue
+                    elif "ppo" in agent_info.lower():
+                        agent = PPOAgent(state_size, action_size, config.get("agents", {}).get("ppo", {}))
+                        if not agent.load(agent_info):
+                            logger.error(f"Failed to load PPO model for agent '{agent_name}' from {agent_info}")
+                            continue
+                    else:  # Default to DQN
+                        agent = DQNAgent(state_size, action_size, config.get("agents", {}).get("dqn", {}))
+                        if not agent.load(agent_info):
+                            logger.error(f"Failed to load DQN model for agent '{agent_name}' from {agent_info}")
+                            continue
                 elif callable(getattr(agent_info, 'act', None)):
                     # Agent info is already an agent object
                     agent = agent_info
@@ -574,21 +587,29 @@ def create_benchmark_visualizations(benchmark_results, episode_df, output_dir):
         logger.error(traceback.format_exc())
 
 
-def create_benchmark_agents(config, model_path=None):
+def create_benchmark_agents(config, model_paths=None):
     """
     Create a dictionary of agents for benchmarking.
     
     Args:
         config: Configuration dictionary
-        model_path: Path to the trained model (if None, only baseline agents are created)
+        model_paths: List of paths to trained models 
+                     (if None, only baseline agents are created)
         
     Returns:
         Dictionary mapping agent names to agent objects or model paths
     """
     agents = {}
     
-    # State size calculation for random agent
-    state_size = config.get("grid_size", 4) * config.get("grid_size", 4) * 5
+    # Create a sample environment to get state and action sizes
+    env = TrafficSimulation(
+        config=config,
+        visualization=False,
+        random_seed=config.get("random_seed", 42)
+    )
+    state_size = env.observation_space.shape[0] * env.observation_space.shape[1]
+    action_size = env.action_space.n
+    env.close()
     
     # Add baseline agents
     agents["FixedTiming"] = FixedTimingAgent(
@@ -608,9 +629,73 @@ def create_benchmark_agents(config, model_path=None):
         seed=config.get("random_seed", 42)
     )
     
-    # Add trained agent if model path is provided
-    if model_path and os.path.exists(model_path):
-        agents["TrainedDQN"] = model_path
+    # Add trained agents if model paths are provided
+    if model_paths:
+        if isinstance(model_paths, str):
+            model_paths = [model_paths]
+        
+        for model_path in model_paths:
+            if os.path.exists(model_path):
+                # Create agent based on file name pattern
+                if "simple_dqn" in model_path.lower():
+                    agent_config = {
+                        "hidden_dim": 64,
+                        "device": "auto",
+                        "learning_rate": 0.0005,
+                        "gamma": 0.99,
+                        "epsilon_start": 1.0,
+                        "epsilon_end": 0.01,
+                        "epsilon_decay": 0.995,
+                        "buffer_size": 10000,
+                        "batch_size": 64,
+                    }
+                    agent = SimpleDQNAgent(state_size, action_size, agent_config)
+                    if agent.load(model_path):
+                        agents["SimpleDQN"] = agent
+                        logger.info("SimpleDQN agent loaded successfully")
+                    else:
+                        logger.error(f"Failed to load SimpleDQN model from {model_path}")
+                
+                elif "ppo" in model_path.lower():
+                    agent_config = {
+                        "hidden_dim": 256,
+                        "device": "auto",
+                        "learning_rate": 0.0003,
+                        "gamma": 0.99,
+                        "gae_lambda": 0.95,
+                        "clip_ratio": 0.2,
+                        "value_coef": 1.0,
+                        "entropy_coef": 0.01,
+                        "batch_size": 64,
+                        "update_epochs": 10,
+                        "max_grad_norm": 0.5
+                    }
+                    agent = PPOAgent(state_size, action_size, agent_config)
+                    if agent.load(model_path):
+                        agents["PPO"] = agent
+                        logger.info("PPO agent loaded successfully")
+                    else:
+                        logger.error(f"Failed to load PPO model from {model_path}")
+                
+                else:  # Assume DQN
+                    agent_config = {
+                        "hidden_dim": 64,
+                        "device": "auto",
+                        "learning_rate": 0.001,
+                        "gamma": 0.99,
+                        "epsilon_start": 1.0,
+                        "epsilon_end": 0.01,
+                        "epsilon_decay": 0.995,
+                        "buffer_size": 10000,
+                        "batch_size": 64,
+                        "update_every": 4
+                    }
+                    agent = DQNAgent(state_size, action_size, agent_config)
+                    if agent.load(model_path):
+                        agents["DQN"] = agent
+                        logger.info("DQN agent loaded successfully")
+                    else:
+                        logger.error(f"Failed to load DQN model from {model_path}")
     
     return agents
 
@@ -623,7 +708,7 @@ if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Benchmark traffic light control agents")
     parser.add_argument("--config", type=str, default=None, help="Path to configuration file")
-    parser.add_argument("--model", type=str, default=None, help="Path to trained model")
+    parser.add_argument("--model", type=str, nargs="+", default=None, help="Path(s) to trained model(s)")
     parser.add_argument("--episodes", type=int, default=10, help="Number of episodes per benchmark")
     parser.add_argument("--output", type=str, default="results/benchmark", help="Output directory")
     parser.add_argument("--patterns", type=str, default="uniform,rush_hour,weekend", 

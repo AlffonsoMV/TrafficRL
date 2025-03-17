@@ -1,0 +1,50 @@
+# PPO Agent Configuration
+# ====================
+
+# Environment settings
+grid_size: 4
+max_steps: 1000
+visualization: false  # Set to true if you want to see visualization during training
+random_seed: 42
+green_duration: 10
+
+# Traffic patterns
+traffic_patterns:
+  uniform:
+    north_south_rate: 0.3
+    east_west_rate: 0.3
+  rush_hour:
+    north_south_rate: 0.6
+    east_west_rate: 0.3
+  natural:
+    base_arrival: 0.02
+    peak_intensity: 2.0
+    weekend_intensity: 1.5
+    morning_peak: 0.33
+    evening_peak: 0.71
+    weekend_peak: 0.5
+
+# Agent settings
+learning_rate: 0.0003
+gamma: 0.99
+gae_lambda: 0.95
+clip_epsilon: 0.2
+c1: 0.5  # Value loss coefficient
+c2: 0.01  # Entropy coefficient
+batch_size: 64
+n_epochs: 4
+hidden_dim: 128
+device: "auto"
+
+# Training settings
+num_episodes: 500
+eval_frequency: 100
+save_frequency: 100
+early_stopping_patience: 20
+early_stopping_reward: 10000
+
+# Reward function settings
+waiting_time_weight: -1.0
+throughput_weight: 1.0
+max_waiting_time: 100
+reward_scale: 0.01 

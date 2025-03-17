@@ -14,12 +14,13 @@ import pandas as pd
 from tqdm import tqdm
 import seaborn as sns
 from datetime import datetime
+import torch
 
 # Import environment and agents
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
 from traffic_rl.agents.dqn_agent import DQNAgent
-from traffic_rl.agents.fixed_timing_agent import FixedTimingAgent, AdaptiveTimingAgent
-from traffic_rl.agents.base import BaseAgent, RandomAgent
+from traffic_rl.agents.ppo_agent import PPOAgent
+from traffic_rl.agents.simple_dqn_agent import SimpleDQNAgent
 from traffic_rl.config import load_config
 
 logger = logging.getLogger("TrafficRL.Utils.Benchmark")
@@ -573,42 +574,110 @@ def create_benchmark_visualizations(benchmark_results, episode_df, output_dir):
         logger.error(traceback.format_exc())
 
 
-def create_benchmark_agents(config, model_path=None):
+def create_benchmark_agents(config, model_paths=None):
     """
     Create a dictionary of agents for benchmarking.
     
     Args:
         config: Configuration dictionary
-        model_path: Path to the trained model (if None, only baseline agents are created)
-        
+        model_paths: List of paths to trained models
+    
     Returns:
-        Dictionary mapping agent names to agent objects or model paths
+        Dictionary of agent names to agent instances
     """
     agents = {}
     
-    # State size calculation for random agent
-    state_size = config.get("grid_size", 4) * config.get("grid_size", 4) * 5
+    # Create environment to get state and action sizes
+    env = TrafficSimulation(config=config, visualization=False)
+    state_size = env.observation_space.shape[0] * env.observation_space.shape[1]
+    action_size = env.action_space.n
+    env.close()
     
     # Add baseline agents
+    from traffic_rl.agents.fixed_timing_agent import FixedTimingAgent, AdaptiveTimingAgent
+    from traffic_rl.agents.base import RandomAgent
+    
     agents["FixedTiming"] = FixedTimingAgent(
-        action_size=2,  # Binary action space [NS_GREEN, EW_GREEN]
+        action_size=action_size,
         phase_duration=config.get("green_duration", 10) * 3  # 3x longer than default green duration
     )
     
     agents["AdaptiveTiming"] = AdaptiveTimingAgent(
-        action_size=2,
+        action_size=action_size,
         min_phase_duration=config.get("green_duration", 10),
         max_phase_duration=config.get("green_duration", 10) * 6
     )
     
     agents["Random"] = RandomAgent(
         state_size=state_size,
-        action_size=2,
+        action_size=action_size,
         seed=config.get("random_seed", 42)
     )
     
-    # Add trained agent if model path is provided
-    if model_path and os.path.exists(model_path):
-        agents["TrainedDQN"] = model_path
+    # Add trained agents if model paths are provided
+    if model_paths:
+        if isinstance(model_paths, str):
+            model_paths = [model_paths]
+        
+        for model_path in model_paths:
+            if os.path.exists(model_path):
+                logger.info(f"Attempting to load model from {model_path}")
+                try:
+                    # Try to determine agent type from model file
+                    checkpoint = torch.load(model_path, map_location='cpu')
+                    
+                    # Extract agent type from path
+                    agent_type = None
+                    if "dqn" in model_path.lower() and "simple" not in model_path.lower():
+                        agent_type = "dqn"
+                    elif "simple_dqn" in model_path.lower():
+                        agent_type = "simple_dqn"
+                    elif "ppo" in model_path.lower():
+                        agent_type = "ppo"
+                    
+                    logger.info(f"Detected agent type: {agent_type} from path {model_path}")
+                    
+                    if agent_type == "ppo" or 'policy_state_dict' in checkpoint:
+                        # Create and load PPO agent
+                        logger.info("Loading PPO model")
+                        ppo_config = config["agent"]["ppo"] if "agent" in config and "ppo" in config["agent"] else {}
+                        ppo_config.setdefault("device", config.get("device", "auto"))
+                        ppo_agent = PPOAgent(state_size, action_size, ppo_config)
+                        if ppo_agent.load(model_path):
+                            agents["PPO"] = ppo_agent
+                            logger.info(f"Successfully loaded PPO model from {model_path}")
+                        else:
+                            logger.error(f"Failed to load PPO model from {model_path}")
+                    
+                    elif agent_type == "simple_dqn":
+                        # Create and load Simple DQN agent
+                        logger.info("Loading Simple DQN model")
+                        simple_dqn_config = config["agent"]["simple_dqn"] if "agent" in config and "simple_dqn" in config["agent"] else {}
+                        simple_dqn_config.setdefault("device", config.get("device", "auto"))
+                        simple_dqn_agent = SimpleDQNAgent(state_size, action_size, simple_dqn_config)
+                        if simple_dqn_agent.load(model_path):
+                            agents["SimpleDQN"] = simple_dqn_agent
+                            logger.info(f"Successfully loaded Simple DQN model from {model_path}")
+                        else:
+                            logger.error(f"Failed to load Simple DQN model from {model_path}")
+                    
+                    elif agent_type == "dqn" or 'local_network_state_dict' in checkpoint or 'model_state_dict' in checkpoint:
+                        # Create and load DQN agent
+                        logger.info("Loading DQN model")
+                        dqn_config = config["agent"]["dqn"] if "agent" in config and "dqn" in config["agent"] else {}
+                        dqn_config.setdefault("device", config.get("device", "auto"))
+                        dqn_agent = DQNAgent(state_size, action_size, dqn_config)
+                        if dqn_agent.load(model_path):
+                            agents["DQN"] = dqn_agent
+                            logger.info(f"Successfully loaded DQN model from {model_path}")
+                        else:
+                            logger.error(f"Failed to load DQN model from {model_path}")
+                    
+                    else:
+                        logger.warning(f"Unknown model structure in {model_path}")
+                except Exception as e:
+                    logger.error(f"Error loading model from {model_path}: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
     
     return agents

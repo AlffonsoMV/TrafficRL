@@ -14,34 +14,35 @@ logger = logging.getLogger("TrafficRL.Config")
 CONFIG = {
     "sim_time": 3600,           # Simulation time in seconds
     "num_episodes": 500,        # Number of training episodes
-    "max_steps": 1000,          # Maximum steps per episode
-    "learning_rate": 0.0003,    # Learning rate for the optimizer
+    "max_steps": 500,          # Maximum steps per episode (reduced from 1000 for faster training)
+    "learning_rate": 0.0005,    # Learning rate for the optimizer (increased from 0.0003 for faster learning)
     "gamma": 0.99,              # Discount factor
     "epsilon_start": 1.0,       # Starting epsilon for exploration
     "epsilon_end": 0.01,        # Ending epsilon for exploration
-    "epsilon_decay": 0.995,     # Epsilon decay rate
-    "buffer_size": 100000,      # Replay buffer size
-    "batch_size": 64,           # Batch size for training
-    "target_update": 5,         # Target network update frequency
-    "eval_frequency": 20,       # Evaluation frequency (episodes)
+    "epsilon_decay": 0.9,     # Epsilon decay rate (increased from 0.995 for faster exploration reduction)
+    "buffer_size": 50000,       # Replay buffer size (reduced from 100000 for less memory usage)
+    "batch_size": 32,           # Batch size for training (reduced from 64 for faster processing)
+    "target_update": 10,         # Target network update frequency (increased from 5 for less frequent updates)
+    "eval_frequency": 10,       # Evaluation frequency (episodes) (reduced from 20 for faster feedback)
     "save_frequency": 25,       # Model saving frequency (episodes)
-    "grid_size": 4,             # Size of the traffic grid (4x4)
+    "grid_size": 6,             # Size of the traffic grid (increased from 2x2 to 6x6)
     "max_cars": 30,             # Maximum number of cars per lane
-    "green_duration": 10,       # Default green light duration (seconds)
+    "green_duration": 1,       # Default green light duration (seconds)
     "yellow_duration": 3,       # Default yellow light duration (seconds)
     "visualization": False,     # Enable visualization during training
     "device": "auto",           # Auto-detect device (CUDA, CPU, MPS)
-    "early_stopping_reward": 9999,  # Reward threshold for early stopping
+    "early_stopping_reward": 1e10,  # Effectively disable early stopping by setting an impossibly high threshold
     "early_stopping_patience": 100, # Number of evaluations without improvement before stopping
     "checkpoint_dir": "checkpoints",  # Directory for checkpoints
-    "hidden_dim": 256,          # Hidden dimension for neural networks
+    "hidden_dim": 128,          # Hidden dimension for neural networks (reduced from 256 for faster training)
     "weight_decay": 0.0001,     # L2 regularization parameter
     "grad_clip": 1.0,           # Gradient clipping value
     "use_lr_scheduler": True,   # Use learning rate scheduler
     "lr_step_size": 200,        # LR scheduler step size
     "lr_decay": 0.95,            # LR decay factor
     "clip_rewards": True,       # Whether to clip rewards
-    "reward_scale": 0.1,        # Reward scaling factor
+    "reward_scale": 1.0,        # Reward scaling factor - adjusted for revised reward function
+    "independent_control": True, # Enable independent control of each intersection
     "traffic_patterns": {
         "uniform": {
             "arrival_rate": 0.03,
@@ -60,10 +61,10 @@ CONFIG = {
         }
     },
     "advanced_options": {
-        "prioritized_replay": True,
+        "prioritized_replay": False,  # Turn off prioritized replay for simpler and faster training
         "per_alpha": 0.6,
         "per_beta": 0.4,
-        "dueling_network": True,
+        "dueling_network": False,  # Turn off dueling network for a simpler architecture
         "double_dqn": True
     },
     "random_seed": 42           # Random seed for reproducibility

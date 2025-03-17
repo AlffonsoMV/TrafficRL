@@ -64,3 +64,60 @@ class DQN(nn.Module):
             x = self.fc4(x)
             
         return x
+
+
+class IntersectionDQN(nn.Module):
+    """
+    DQN model that processes each intersection individually and outputs per-intersection actions.
+    This model applies the same network to each intersection's state independently.
+    """
+    def __init__(self, features_per_intersection, output_dim, hidden_dim=128):
+        super(IntersectionDQN, self).__init__()
+        
+        self.features_per_intersection = features_per_intersection
+        
+        # Create a single DQN model to be applied to each intersection
+        self.intersection_model = DQN(
+            input_dim=features_per_intersection, 
+            output_dim=output_dim,
+            hidden_dim=hidden_dim
+        )
+        
+    def forward(self, x):
+        """
+        Process state data for all intersections.
+        
+        Args:
+            x: Batch of states, should be of shape [batch_size, num_intersections * features_per_intersection]
+               or [num_intersections * features_per_intersection] for a single state
+        
+        Returns:
+            Q-values for all intersections [batch_size, num_intersections, output_dim]
+            or [num_intersections, output_dim] for a single state
+        """
+        # Handle different input shapes
+        original_shape = x.shape
+        is_single_state = (len(original_shape) == 1)
+        
+        if is_single_state:
+            # Add batch dimension if single state
+            x = x.unsqueeze(0)
+            
+        batch_size = x.shape[0]
+        
+        # Reshape to [batch_size * num_intersections, features_per_intersection]
+        num_intersections = x.shape[1] // self.features_per_intersection
+        x = x.view(batch_size, num_intersections, self.features_per_intersection)
+        x = x.reshape(batch_size * num_intersections, self.features_per_intersection)
+        
+        # Pass through the model
+        q_values = self.intersection_model(x)
+        
+        # Reshape back to [batch_size, num_intersections, output_dim]
+        q_values = q_values.view(batch_size, num_intersections, -1)
+        
+        # Remove batch dimension if it was a single state
+        if is_single_state:
+            q_values = q_values.squeeze(0)
+            
+        return q_values

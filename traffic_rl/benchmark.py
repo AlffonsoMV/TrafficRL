@@ -167,11 +167,20 @@ def benchmark_agents(config, agents_to_benchmark, traffic_patterns, num_episodes
                         episode_waiting += info.get('average_waiting_time', 0)
                         episode_throughput += info.get('total_cars_passed', 0)
                         episode_densities.append(info.get('traffic_density', 0))
-                        episode_actions.append(int(action))
                         
-                        # Count actions 
-                        if isinstance(action, (int, np.integer)):
-                            action_counts[action] += 1
+                        # Track actions properly for both single and multi-action cases
+                        if isinstance(action, (np.ndarray, list)):
+                            # For multi-action (per-intersection), track the most frequent action
+                            unique_actions, counts = np.unique(action, return_counts=True)
+                            most_frequent_action = int(unique_actions[np.argmax(counts)])
+                            episode_actions.append(most_frequent_action)
+                            # Count each action
+                            for a in action:
+                                action_counts[int(a)] += 1
+                        else:
+                            # Single global action
+                            episode_actions.append(int(action))
+                            action_counts[int(action)] += 1
                         
                         steps += 1
                         
@@ -609,7 +618,13 @@ def create_benchmark_agents(config, model_paths=None):
     )
     state_size = env.observation_space.shape[0] * env.observation_space.shape[1]
     action_size = env.action_space.n
+    num_intersections = env.num_intersections
     env.close()
+    
+    # Store these values in config for agent creation
+    config["state_size"] = state_size
+    config["action_size"] = action_size
+    config["num_intersections"] = num_intersections
     
     # Add baseline agents
     agents["FixedTiming"] = FixedTimingAgent(
@@ -637,65 +652,36 @@ def create_benchmark_agents(config, model_paths=None):
         for model_path in model_paths:
             if os.path.exists(model_path):
                 # Create agent based on file name pattern
+                agent_config = config.copy()
+                
+                # Explicitly set device to "mps" for Mac acceleration
+                agent_config["device"] = "mps"
+                
+                # Per-intersection support based on config setting
+                if config.get("use_per_intersection", False):
+                    agent_config["use_per_intersection"] = True
+                
+                logger.info(f"Creating agent with device: {agent_config['device']}")
+                
                 if "simple_dqn" in model_path.lower():
-                    agent_config = {
-                        "hidden_dim": 64,
-                        "device": "auto",
-                        "learning_rate": 0.0005,
-                        "gamma": 0.99,
-                        "epsilon_start": 1.0,
-                        "epsilon_end": 0.01,
-                        "epsilon_decay": 0.995,
-                        "buffer_size": 10000,
-                        "batch_size": 64,
-                    }
                     agent = SimpleDQNAgent(state_size, action_size, agent_config)
-                    if agent.load(model_path):
-                        agents["SimpleDQN"] = agent
-                        logger.info("SimpleDQN agent loaded successfully")
-                    else:
-                        logger.error(f"Failed to load SimpleDQN model from {model_path}")
-                
+                    agent_name = "SimpleDQN"
                 elif "ppo" in model_path.lower():
-                    agent_config = {
-                        "hidden_dim": 256,
-                        "device": "auto",
-                        "learning_rate": 0.0003,
-                        "gamma": 0.99,
-                        "gae_lambda": 0.95,
-                        "clip_ratio": 0.2,
-                        "value_coef": 1.0,
-                        "entropy_coef": 0.01,
-                        "batch_size": 64,
-                        "update_epochs": 10,
-                        "max_grad_norm": 0.5
-                    }
                     agent = PPOAgent(state_size, action_size, agent_config)
-                    if agent.load(model_path):
-                        agents["PPO"] = agent
-                        logger.info("PPO agent loaded successfully")
-                    else:
-                        logger.error(f"Failed to load PPO model from {model_path}")
-                
-                else:  # Assume DQN
-                    agent_config = {
-                        "hidden_dim": 64,
-                        "device": "auto",
-                        "learning_rate": 0.001,
-                        "gamma": 0.99,
-                        "epsilon_start": 1.0,
-                        "epsilon_end": 0.01,
-                        "epsilon_decay": 0.995,
-                        "buffer_size": 10000,
-                        "batch_size": 64,
-                        "update_every": 4
-                    }
+                    agent_name = "PPO"
+                else:
+                    # Default to DQN
                     agent = DQNAgent(state_size, action_size, agent_config)
-                    if agent.load(model_path):
-                        agents["DQN"] = agent
-                        logger.info("DQN agent loaded successfully")
-                    else:
-                        logger.error(f"Failed to load DQN model from {model_path}")
+                    agent_name = "TrainedDQN"
+                
+                # Try to load the model, skip if it fails
+                if agent.load(model_path):
+                    logger.info(f"Successfully loaded model from {model_path}")
+                    agents[agent_name] = agent
+                else:
+                    logger.warning(f"Failed to load model from {model_path}, skipping")
+            else:
+                logger.warning(f"Model file not found: {model_path}, skipping")
     
     return agents
 

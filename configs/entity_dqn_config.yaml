@@ -1,0 +1,81 @@
+# Entity-aware DQN Configuration for Traffic Control
+
+# Agent configuration
+agent_type: "entity_dqn"
+
+# Environment parameters
+grid_size: 4  # 4x4 grid of intersections
+max_cars: 30  # Maximum cars per intersection
+green_duration: 1  # Duration of green light
+yellow_duration: 3  # Duration of yellow light
+max_active_cars: 100  # Maximum total active cars
+visualization: true  # Whether to enable visualization
+car_spawn_probability: 0.1  # Probability of spawning a car each step
+random_seed: 42  # Random seed for reproducibility
+
+# Traffic light reward function weights
+waiting_time_weight: -1.0
+throughput_weight: 1.0
+reward_scale: 0.1  # Scale down rewards for stability
+
+# Car entity parameters
+car_feature_dim: 4  # Number of features to extract per car
+max_cars_per_intersection: 10  # Maximum cars per intersection for feature extraction
+
+# Training parameters
+num_episodes: 500  # Number of episodes to train
+max_steps: 300  # Maximum steps per episode
+eval_frequency: 25  # Evaluate every N episodes
+save_frequency: 50  # Save model every N episodes
+
+# Early stopping
+early_stopping_patience: 20  # Number of evaluations without improvement before stopping
+early_stopping_reward: 100  # Stop if average reward exceeds this value
+
+# Agent specific parameters
+learning_rate: 0.001
+gamma: 0.99  # Discount factor
+epsilon_start: 1.0  # Initial exploration rate
+epsilon_end: 0.01  # Final exploration rate
+epsilon_decay: 0.995  # Exploration decay rate
+buffer_size: 10000  # Replay buffer size
+batch_size: 64  # Batch size
+hidden_dim: 256  # Hidden dimension of neural network
+target_update: 4  # Steps between target network updates
+clip_rewards: true  # Whether to clip rewards
+
+# Advanced options
+device: "auto"  # Use GPU if available, otherwise CPU
+advanced_options:
+  double_dqn: true  # Use double DQN 
+  dueling_network: false  # Don't use dueling network (not fully implemented for entity DQN)
+  prioritized_replay: true  # Use prioritized experience replay
+  per_alpha: 0.6  # Priority exponent
+  per_beta: 0.4  # Importance sampling exponent
+
+# Traffic pattern to use (can be uniform, rush_hour, weekend, or natural)
+traffic_pattern: "natural"
+
+# Traffic patterns configuration
+traffic_patterns:
+  uniform:
+    arrival_rate: 0.05  # Uniform arrival rate
+  
+  rush_hour:
+    base_arrival: 0.03
+    morning_peak: 0.33  # Morning rush hour (~8am)
+    evening_peak: 0.71  # Evening rush hour (~5pm)
+    peak_intensity: 2.0  # Intensity factor applied during peak hours
+  
+  weekend:
+    base_arrival: 0.03
+    midday_peak: 0.5  # Midday peak (~noon)
+    peak_intensity: 1.5  # Intensity factor applied during peak hours
+  
+  natural:
+    base_arrival: 0.03
+    morning_peak: 0.33  # Morning rush hour (~8am)
+    evening_peak: 0.71  # Evening rush hour (~5pm)
+    weekend_peak: 0.5  # Weekend peak (~noon)
+    peak_intensity: 2.0  # Intensity factor for weekday rush hours
+    weekend_intensity: 1.5  # Intensity factor for weekend rush hours

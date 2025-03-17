@@ -16,29 +16,54 @@ import matplotlib.pyplot as plt
 
 logger = logging.getLogger("TrafficRL")
 
-def visualize_results(rewards_history, avg_rewards_history, save_path=None):
+def visualize_results(rewards_history, avg_rewards_history, car_counts=None, save_path=None):
     """
     Visualize training results.
     
     Args:
         rewards_history: List of episode rewards
         avg_rewards_history: List of average rewards
+        car_counts: List of average active car counts per episode
         save_path: Path to save the plot
     """
     try:
-        plt.figure(figsize=(12, 6))
-        
-        # Plot episode rewards
-        plt.plot(rewards_history, alpha=0.6, label='Episode Reward')
-        
-        # Plot 100-episode rolling average
-        plt.plot(avg_rewards_history, label='Avg Reward (100 episodes)')
-        
-        plt.xlabel('Episode')
-        plt.ylabel('Reward')
-        plt.title('Training Progress')
-        plt.legend()
-        plt.grid(True)
+        if car_counts:
+            # Create a figure with two subplots if we have car counts
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+            
+            # Top plot for rewards
+            ax1.plot(rewards_history, alpha=0.6, label='Episode Reward')
+            ax1.plot(avg_rewards_history, label='Avg Reward (100 episodes)')
+            ax1.set_xlabel('Episode')
+            ax1.set_ylabel('Reward')
+            ax1.set_title('Training Progress - Rewards')
+            ax1.legend()
+            ax1.grid(True)
+            
+            # Bottom plot for car counts
+            ax2.plot(car_counts, color='#e67e22', label='Avg Cars per Episode')
+            ax2.set_xlabel('Episode')
+            ax2.set_ylabel('Number of Cars')
+            ax2.set_title('Active Cars per Episode')
+            ax2.legend()
+            ax2.grid(True)
+            
+            plt.tight_layout()
+        else:
+            # Original single plot for rewards only
+            plt.figure(figsize=(12, 6))
+            
+            # Plot episode rewards
+            plt.plot(rewards_history, alpha=0.6, label='Episode Reward')
+            
+            # Plot 100-episode rolling average
+            plt.plot(avg_rewards_history, label='Avg Reward (100 episodes)')
+            
+            plt.xlabel('Episode')
+            plt.ylabel('Reward')
+            plt.title('Training Progress')
+            plt.legend()
+            plt.grid(True)
         
         if save_path:
             # Ensure directory exists
@@ -57,9 +82,14 @@ def visualize_results(rewards_history, avg_rewards_history, save_path=None):
             try:
                 base_path = os.path.splitext(save_path)[0]
                 with open(f"{base_path}_data.csv", 'w') as f:
-                    f.write("episode,reward,avg_reward\n")
-                    for i, (r, ar) in enumerate(zip(rewards_history, avg_rewards_history)):
-                        f.write(f"{i},{r},{ar}\n")
+                    if car_counts:
+                        f.write("episode,reward,avg_reward,car_count\n")
+                        for i, vals in enumerate(zip(rewards_history, avg_rewards_history, car_counts)):
+                            f.write(f"{i},{vals[0]},{vals[1]},{vals[2]}\n")
+                    else:
+                        f.write("episode,reward,avg_reward\n")
+                        for i, (r, ar) in enumerate(zip(rewards_history, avg_rewards_history)):
+                            f.write(f"{i},{r},{ar}\n")
                 logger.info(f"Raw data saved to {base_path}_data.csv")
                 return True
             except Exception as e2:

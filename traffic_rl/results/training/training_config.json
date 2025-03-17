@@ -1,57 +1,57 @@
 {
-    "sim_time": 3600,
-    "num_episodes": 500,
-    "max_steps": 1000,
-    "learning_rate": 0.0003,
-    "gamma": 0.99,
-    "epsilon_start": 1.0,
-    "epsilon_end": 0.01,
-    "epsilon_decay": 0.995,
-    "buffer_size": 100000,
-    "batch_size": 64,
-    "target_update": 5,
-    "eval_frequency": 20,
-    "save_frequency": 25,
-    "grid_size": 4,
-    "max_cars": 30,
-    "green_duration": 10,
-    "yellow_duration": 3,
-    "visualization": true,
-    "device": "auto",
-    "early_stopping_reward": 9999,
-    "early_stopping_patience": 100,
-    "checkpoint_dir": "checkpoints",
-    "hidden_dim": 256,
-    "weight_decay": 0.0001,
-    "grad_clip": 1.0,
-    "use_lr_scheduler": true,
-    "lr_step_size": 200,
-    "lr_decay": 0.95,
-    "clip_rewards": true,
-    "reward_scale": 0.1,
-    "traffic_patterns": {
-        "uniform": {
-            "arrival_rate": 0.03,
-            "variability": 0.01
-        },
-        "rush_hour": {
-            "morning_peak": 0.33,
-            "evening_peak": 0.71,
-            "peak_intensity": 2.0,
-            "base_arrival": 0.03
-        },
-        "weekend": {
-            "midday_peak": 0.5,
-            "peak_intensity": 1.5,
-            "base_arrival": 0.02
-        }
+  "sim_time": 3600,
+  "num_episodes": 500,
+  "max_steps": 1000,
+  "learning_rate": 0.0003,
+  "gamma": 0.99,
+  "epsilon_start": 1.0,
+  "epsilon_end": 0.01,
+  "epsilon_decay": 0.995,
+  "buffer_size": 100000,
+  "batch_size": 64,
+  "target_update": 5,
+  "eval_frequency": 20,
+  "save_frequency": 25,
+  "grid_size": 4,
+  "max_cars": 30,
+  "green_duration": 1,
+  "yellow_duration": 3,
+  "visualization": true,
+  "device": "auto",
+  "early_stopping_reward": 9999,
+  "early_stopping_patience": 100,
+  "checkpoint_dir": "checkpoints",
+  "hidden_dim": 256,
+  "weight_decay": 0.0001,
+  "grad_clip": 1.0,
+  "use_lr_scheduler": true,
+  "lr_step_size": 200,
+  "lr_decay": 0.95,
+  "clip_rewards": true,
+  "reward_scale": 0.1,
+  "traffic_patterns": {
+    "uniform": {
+      "arrival_rate": 0.03,
+      "variability": 0.01
     },
-    "advanced_options": {
-        "prioritized_replay": true,
-        "per_alpha": 0.6,
-        "per_beta": 0.4,
-        "dueling_network": true,
-        "double_dqn": true
+    "rush_hour": {
+      "morning_peak": 0.33,
+      "evening_peak": 0.71,
+      "peak_intensity": 2.0,
+      "base_arrival": 0.03
     },
-    "random_seed": 42
+    "weekend": {
+      "midday_peak": 0.5,
+      "peak_intensity": 1.5,
+      "base_arrival": 0.02
+    }
+  },
+  "advanced_options": {
+    "prioritized_replay": true,
+    "per_alpha": 0.6,
+    "per_beta": 0.4,
+    "dueling_network": true,
+    "double_dqn": true
+  },
+  "random_seed": 42
 }

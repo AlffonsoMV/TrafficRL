@@ -20,28 +20,38 @@ from traffic_rl.environment.traffic_simulation import TrafficSimulation
 from traffic_rl.agents.dqn_agent import DQNAgent
 from traffic_rl.agents.ppo_agent import PPOAgent
 from traffic_rl.agents.simple_dqn_agent import SimpleDQNAgent
+from traffic_rl.agents.entity_dqn_agent import EntityDQNAgent
 from traffic_rl.utils.visualization import visualize_results
 from traffic_rl.evaluate import evaluate
 
 logger = logging.getLogger("TrafficRL.Train")
 
-def create_agent(agent_type, state_size, action_size, config):
+def create_agent(agent_type, state_size, action_size, num_intersections, config):
     """
     Create an agent based on the specified type.
     
     Args:
-        agent_type: Type of agent to create ('dqn', 'simple_dqn', or 'ppo')
+        agent_type: Type of agent to create ('dqn', 'simple_dqn', 'entity_dqn', or 'ppo')
         state_size: Size of the state space
         action_size: Size of the action space
+        num_intersections: Number of intersections to control
         config: Configuration dictionary
     
     Returns:
         Agent instance
     """
+    # Store number of intersections in config for the agent
+    config["num_intersections"] = num_intersections
+    
     if agent_type.lower() == 'dqn':
         return DQNAgent(state_size, action_size, config)
     elif agent_type.lower() == 'simple_dqn':
         return SimpleDQNAgent(state_size, action_size, config)
+    elif agent_type.lower() == 'entity_dqn':
+        # Add specific configuration for entity-aware DQN
+        config["car_feature_dim"] = config.get("car_feature_dim", 4)
+        config["max_cars_per_intersection"] = config.get("max_cars_per_intersection", 10)
+        return EntityDQNAgent(state_size, action_size, config)
     elif agent_type.lower() == 'ppo':
         # Extract PPO-specific config
         ppo_config = {
@@ -54,7 +64,8 @@ def create_agent(agent_type, state_size, action_size, config):
             "batch_size": config.get("ppo_batch_size", 64),
             "n_epochs": config.get("ppo_n_epochs", 10),
             "hidden_dim": config.get("hidden_dim", 256),
-            "device": config.get("device", "auto")
+            "device": config.get("device", "auto"),
+            "num_intersections": num_intersections
         }
         return PPOAgent(state_size, action_size, ppo_config)
     else:
@@ -92,9 +103,14 @@ def train(config, model_dir="models", agent_type="dqn"):
         # Get state and action sizes
         state_size = env.observation_space.shape[0] * env.observation_space.shape[1]
         action_size = env.action_space.n
+        num_intersections = env.num_intersections
+        
+        # Add grid_size and num_intersections to config for the agent
+        config["grid_size"] = env.grid_size
+        config["num_intersections"] = num_intersections
         
         # Initialize agent
-        agent = create_agent(agent_type, state_size, action_size, config)
+        agent = create_agent(agent_type, state_size, action_size, num_intersections, config)
         
         # Initialize training metrics
         metrics = {
@@ -105,6 +121,7 @@ def train(config, model_dir="models", agent_type="dqn"):
             "learning_rates": [],
             "waiting_times": [],
             "throughput": [],
+            "active_cars": [],
             "training_time": 0
         }
         
@@ -149,6 +166,7 @@ def train(config, model_dir="models", agent_type="dqn"):
             episode_steps = 0
             waiting_time = 0
             throughput = 0
+            car_counts = []
             
             # Episode loop
             for step in range(config["max_steps"]):
@@ -166,8 +184,16 @@ def train(config, model_dir="models", agent_type="dqn"):
                     env.current_episode = episode
                     env.current_step = step
                 
+                # Track car count
+                car_counts.append(len(env.active_cars))
+                
                 # Select action
-                action = agent.act(state)
+                if agent_type.lower() == 'entity_dqn':
+                    # For entity-aware agents, pass the environment to extract car features
+                    action = agent.act(state, env=env)
+                else:
+                    # Standard action selection for other agents
+                    action = agent.act(state)
                 
                 # Take action in environment
                 next_state, reward, terminated, truncated, info = env.step(action)
@@ -186,7 +212,12 @@ def train(config, model_dir="models", agent_type="dqn"):
                     reward *= config["reward_scale"]
                 
                 # Store experience
-                agent.step(state, action, reward, next_state, terminated)
+                if agent_type.lower() == 'entity_dqn':
+                    # For entity-aware agents, pass the environment for car features
+                    agent.step(state, action, reward, next_state, terminated, env=env)
+                else:
+                    # Standard experience storage for other agents
+                    agent.step(state, action, reward, next_state, terminated)
                 
                 # Update state and stats
                 state = next_state
@@ -213,6 +244,10 @@ def train(config, model_dir="models", agent_type="dqn"):
             metrics["waiting_times"].append(avg_waiting_time)
             metrics["throughput"].append(avg_throughput)
             
+            # Calculate average car count for this episode
+            avg_car_count = np.mean(car_counts) if car_counts else 0
+            metrics["active_cars"].append(avg_car_count)
+            
             # Record agent-specific metrics
             if agent_type.lower() == 'dqn':
                 metrics["epsilon_values"].append(agent.epsilon)
@@ -232,8 +267,10 @@ def train(config, model_dir="models", agent_type="dqn"):
             # Log progress
             log_msg = f"Episode {episode}/{config['num_episodes']} - "
             log_msg += f"Reward: {total_reward:.2f}, Avg Reward: {avg_reward:.2f}, "
+            log_msg += f"Cars: {avg_car_count:.1f}, "
             if agent_type.lower() == 'dqn':
                 log_msg += f"Epsilon: {agent.epsilon:.4f}, "
+            log_msg += f"Wait: {avg_waiting_time:.2f}, Through: {avg_throughput:.2f}, "
             log_msg += f"LR: {current_lr:.6f}, Traffic: {current_pattern}"
             logger.info(log_msg)
             
@@ -243,6 +280,7 @@ def train(config, model_dir="models", agent_type="dqn"):
                 progress_bar.set_postfix({
                     'reward': f"{total_reward:.2f}",
                     'avg': f"{avg_reward:.2f}",
+                    'cars': f"{avg_car_count:.1f}",
                     'pattern': current_pattern
                 })
             
@@ -307,8 +345,9 @@ if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Train RL agent for traffic control')
     parser.add_argument('--config', type=str, required=True, help='Path to configuration YAML file')
-    parser.add_argument('--agent-type', type=str, default='dqn', choices=['dqn', 'simple_dqn', 'ppo'], 
-                        help='Type of agent to train (dqn, simple_dqn, or ppo)')
+    parser.add_argument('--agent-type', type=str, default='dqn', 
+                        choices=['dqn', 'simple_dqn', 'entity_dqn', 'ppo'], 
+                        help='Type of agent to train (dqn, simple_dqn, entity_dqn, or ppo)')
     parser.add_argument('--output-dir', type=str, default='results', help='Directory to save results')
     args = parser.parse_args()
     
@@ -334,12 +373,9 @@ if __name__ == "__main__":
     os.makedirs(os.path.join(args.output_dir, args.agent_type, 'plots'), exist_ok=True)
     visualize_results(
         metrics["rewards"], 
-        metrics["avg_rewards"], 
+        metrics["avg_rewards"],
+        metrics["active_cars"],
         save_path=os.path.join(args.output_dir, args.agent_type, 'plots', 'training_progress.png')
     )
     
     logger.info(f"Training completed. Models saved to {model_dir}")
-    
-    
-    
-    

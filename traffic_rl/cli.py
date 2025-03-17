@@ -40,6 +40,8 @@ from traffic_rl.utils.analysis import (
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
 from traffic_rl.agents.dqn_agent import DQNAgent
 from traffic_rl.agents.ppo_agent import PPOAgent
+from traffic_rl.agents.simple_dqn_agent import SimpleDQNAgent
+from traffic_rl.agents.entity_dqn_agent import EntityDQNAgent
 
 
 def set_random_seed(seed):
@@ -152,7 +154,8 @@ def evaluate_command(args, logger):
             config=config,
             model_path=args.model,
             traffic_pattern=pattern,
-            num_episodes=args.episodes
+            num_episodes=args.episodes,
+            agent_type=args.agent_type
         )
         
         results[pattern] = result
@@ -218,8 +221,17 @@ def visualize_command(args, logger):
             state_size = env.observation_space.shape[0] * env.observation_space.shape[1]
             action_size = env.action_space.n
             
-            # Initialize agent
-            agent = DQNAgent(state_size, action_size, config)
+            # Initialize agent based on agent_type
+            if args.agent_type == "dqn":
+                agent = DQNAgent(state_size, action_size, config)
+            elif args.agent_type == "simple_dqn":
+                agent = SimpleDQNAgent(state_size, action_size, config)
+            elif args.agent_type == "entity_dqn":
+                agent = EntityDQNAgent(state_size, action_size, config)
+            elif args.agent_type == "ppo":
+                agent = PPOAgent(state_size, action_size, config)
+            else:
+                agent = DQNAgent(state_size, action_size, config)  # Default to DQN
             
             # Load model
             if agent.load(args.model):
@@ -447,8 +459,9 @@ def parse_args():
     train_parser.add_argument("--visualization", dest="visualization", action="store_true", help="Enable visualization during training")
     train_parser.set_defaults(visualization=None)  # Default to None to use config value
     train_parser.add_argument("--no-plots", action="store_true", help="Disable plotting of training results")
-    train_parser.add_argument("--agent-type", type=str, choices=["dqn", "simple_dqn", "ppo"],
-                            default="dqn", help="Type of agent to train")
+    train_parser.add_argument("--agent-type", type=str, 
+                            choices=["dqn", "simple_dqn", "entity_dqn", "ppo"],
+                            default="dqn", help="Type of agent to train (dqn, simple_dqn, entity_dqn, or ppo)")
     
     # PPO-specific arguments
     train_parser.add_argument("--ppo-learning-rate", type=float,
@@ -481,6 +494,9 @@ def parse_args():
     eval_parser.add_argument("--no-visualization", dest="visualization", action="store_false", help="Disable visualization during evaluation")
     eval_parser.add_argument("--visualization", dest="visualization", action="store_true", help="Enable visualization during evaluation")
     eval_parser.set_defaults(visualization=None)  # Default to None to use config value
+    eval_parser.add_argument("--agent-type", type=str, 
+                          choices=["dqn", "simple_dqn", "entity_dqn", "ppo"],
+                          default="dqn", help="Type of agent to evaluate (dqn, simple_dqn, entity_dqn, or ppo)")
     
     # Visualize command
     viz_parser = subparsers.add_parser("visualize", help="Create visualizations")
@@ -501,6 +517,9 @@ def parse_args():
                            help="Output filename")
     viz_parser.add_argument("--metrics", type=str, default=None,
                            help="Path to metrics file (for metrics visualization)")
+    viz_parser.add_argument("--agent-type", type=str, 
+                           choices=["dqn", "simple_dqn", "entity_dqn", "ppo"],
+                           default="dqn", help="Type of agent to visualize (dqn, simple_dqn, entity_dqn, or ppo)")
     
     # Benchmark command
     bench_parser = subparsers.add_parser("benchmark", help="Benchmark multiple agents")

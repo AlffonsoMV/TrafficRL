@@ -14,6 +14,8 @@ import pygame
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
 from traffic_rl.agents.dqn_agent import DQNAgent
 from traffic_rl.agents.ppo_agent import PPOAgent
+from traffic_rl.agents.simple_dqn_agent import SimpleDQNAgent
+from traffic_rl.agents.entity_dqn_agent import EntityDQNAgent
 
 logger = logging.getLogger("Evaluate")
 
@@ -50,7 +52,11 @@ def evaluate(agent, env, num_episodes=10):
                 env.current_episode = episode + 1
                 env.current_step = step
                 
-            action = agent.act(state, eval_mode=True)
+            # If using entity-aware DQN, pass the environment
+            if isinstance(agent, EntityDQNAgent):
+                action = agent.act(state, env=env, eval_mode=True)
+            else:
+                action = agent.act(state, eval_mode=True)
             next_state, reward, terminated, truncated, _ = env.step(action)
             next_state = next_state.flatten()  # Flatten for NN input
             
@@ -73,7 +79,7 @@ def create_agent(agent_type, state_size, action_size, config):
     Create an agent based on the specified type.
     
     Args:
-        agent_type: Type of agent to create ('dqn' or 'ppo')
+        agent_type: Type of agent to create ('dqn', 'simple_dqn', 'entity_dqn', or 'ppo')
         state_size: Size of the state space
         action_size: Size of the action space
         config: Configuration dictionary
@@ -83,6 +89,13 @@ def create_agent(agent_type, state_size, action_size, config):
     """
     if agent_type.lower() == 'dqn':
         return DQNAgent(state_size, action_size, config)
+    elif agent_type.lower() == 'simple_dqn':
+        return SimpleDQNAgent(state_size, action_size, config)
+    elif agent_type.lower() == 'entity_dqn':
+        # Add specific configuration for entity-aware DQN
+        config["car_feature_dim"] = config.get("car_feature_dim", 4)
+        config["max_cars_per_intersection"] = config.get("max_cars_per_intersection", 10)
+        return EntityDQNAgent(state_size, action_size, config)
     elif agent_type.lower() == 'ppo':
         # Extract PPO-specific config
         ppo_config = {
@@ -259,8 +272,9 @@ if __name__ == "__main__":
     parser.add_argument("--pattern", type=str, default="uniform", help="Traffic pattern to evaluate")
     parser.add_argument("--episodes", type=int, default=10, help="Number of evaluation episodes")
     parser.add_argument("--output", type=str, default="results/evaluation.json", help="Output file for results")
-    parser.add_argument("--agent-type", type=str, choices=["dqn", "ppo"], default="dqn",
-                       help="Type of agent to evaluate")
+    parser.add_argument("--agent-type", type=str, 
+                      choices=["dqn", "simple_dqn", "entity_dqn", "ppo"], default="dqn",
+                      help="Type of agent to evaluate (dqn, simple_dqn, entity_dqn, or ppo)")
     args = parser.parse_args()
     
     # Run evaluation

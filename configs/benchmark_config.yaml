@@ -6,16 +6,23 @@ grid_size: 4
 max_steps: 1000
 visualization: false  # Disable visualization for benchmarking
 random_seed: 42
-green_duration: 10
+green_duration: 1
+max_cars: 200         # Maximum cars per lane (increased from 100)
+max_active_cars: 500  # Maximum active cars total (increased from 300)
+car_spawn_probability: 0.6  # Higher probability to generate more cars (increased from 0.4)
+
+# Model architecture settings
+use_per_intersection: true  # Enable per-intersection control
+hidden_dim: 128
 
 # Traffic patterns
 traffic_patterns:
   uniform:
-    north_south_rate: 0.3
-    east_west_rate: 0.3
+    north_south_rate: 0.4  # Increased from 0.3
+    east_west_rate: 0.4    # Increased from 0.3
   rush_hour:
-    north_south_rate: 0.6
-    east_west_rate: 0.3
+    north_south_rate: 0.8  # Increased from 0.6
+    east_west_rate: 0.5    # Increased from 0.3
 
 # Agent settings
 agent:
@@ -30,7 +37,8 @@ agent:
     hidden_dim: 128
     target_update: 10
     update_every: 4
-    device: "auto"
+    device: "mps"  # Changed from "auto" to "mps" for Mac acceleration
+    use_per_intersection: true
     
   simple_dqn:
     learning_rate: 0.0005
@@ -43,7 +51,8 @@ agent:
     hidden_dim: 128
     target_update: 10
     update_every: 4
-    device: "auto"
+    device: "mps"  # Changed from "auto" to "mps" for Mac acceleration
+    use_per_intersection: true
     
   ppo:
     learning_rate: 0.0003
@@ -55,7 +64,8 @@ agent:
     batch_size: 64
     n_epochs: 4
     hidden_dim: 128
-    device: "auto"
+    device: "mps"  # Changed from "auto" to "mps" for Mac acceleration
+    use_per_intersection: true
 
 # Training settings
 num_episodes: 500
@@ -69,6 +79,7 @@ waiting_time_weight: -1.0
 throughput_weight: 1.0
 max_waiting_time: 100
 reward_scale: 0.01
+use_normalized_reward: false
 
 # Output settings
 model_dir: "results/benchmark"

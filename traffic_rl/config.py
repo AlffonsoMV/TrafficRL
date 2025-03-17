@@ -27,11 +27,13 @@ CONFIG = {
     "eval_frequency": 20,       # Evaluation frequency (episodes)
     "save_frequency": 25,       # Model saving frequency (episodes)
     "grid_size": 4,             # Size of the traffic grid (4x4)
-    "max_cars": 30,             # Maximum number of cars per lane
-    "green_duration": 10,       # Default green light duration (seconds)
+    "max_cars": 200,            # Maximum number of cars per lane
+    "max_active_cars": 500,     # Maximum number of active cars
+    "car_spawn_probability": 0.6, # Probability of generating a car at each step
+    "green_duration": 1,        # Default green light duration (seconds)
     "yellow_duration": 3,       # Default yellow light duration (seconds)
     "visualization": False,     # Enable visualization during training
-    "device": "auto",           # Auto-detect device (CUDA, CPU, MPS)
+    "device": "mps",            # Use MPS for Mac acceleration
     "early_stopping_reward": 9999,  # Reward threshold for early stopping
     "early_stopping_patience": 100, # Number of evaluations without improvement before stopping
     "checkpoint_dir": "checkpoints",  # Directory for checkpoints
@@ -43,6 +45,14 @@ CONFIG = {
     "lr_decay": 0.95,            # LR decay factor
     "clip_rewards": True,       # Whether to clip rewards
     "reward_scale": 0.1,        # Reward scaling factor
+    
+    # Per-intersection control settings
+    "use_per_intersection": True,  # Use per-intersection DQN architecture
+    
+    # Reward function parameters
+    "use_normalized_reward": False,  # Whether to use the normalized reward function
+    "waiting_time_weight": -1.0,     # Weight for waiting time penalty
+    "throughput_weight": 1.0,        # Weight for throughput reward
     
     # PPO-specific parameters
     "ppo_learning_rate": 3e-4,  # PPO learning rate

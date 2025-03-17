@@ -4,6 +4,14 @@ import sys
 import numpy as np
 import torch
 import random
+from traffic_rl.config import load_config
+from traffic_rl.train import train
+from traffic_rl.evaluate import evaluate
+from traffic_rl.utils.visualization import visualize
+from traffic_rl.utils.benchmark import benchmark
+from traffic_rl.analyze import analyze
+
+logger = logging.getLogger("TrafficRL.Main")
 
 def main():
     """Main entry point for the TrafficRL CLI."""
@@ -18,8 +26,10 @@ def main():
     # Train command
     train_parser = subparsers.add_parser("train", help="Train a new model")
     train_parser.add_argument("--agent-type", type=str, required=True, 
-                            choices=["dqn", "simple_dqn", "ppo"], 
+                            choices=["dqn", "simple_dqn", "entity_dqn", "ppo"], 
                             help="Type of agent to train")
+    train_parser.add_argument("--output", type=str, default="results/training",
+                            help="Directory to save training results")
     train_parser.add_argument("--resume", type=str, help="Path to checkpoint to resume training from")
     
     # Evaluate command
@@ -61,7 +71,7 @@ def main():
     
     try:
         if args.command == "train":
-            train(config, args.agent_type, args.resume)
+            train(config, args.agent_type, args.resume, model_dir=args.output)
         elif args.command == "evaluate":
             evaluate(config, args.model, args.episodes)
         elif args.command == "visualize":

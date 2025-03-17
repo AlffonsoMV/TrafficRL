@@ -33,22 +33,71 @@ class DQNAgent:
         self.action_size = action_size
         self.config = config if config else {}
         
-        # Get device - auto-detect if set to 'auto' or if missing
+        # Get device - handle "mps" specifically for Mac
         if self.config.get("device", "auto") == "auto":
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            # Auto-detect available device
+            if torch.backends.mps.is_available():
+                self.device = torch.device("mps")
+                logger.info("MPS (Metal Performance Shaders) device detected and will be used")
+            elif torch.cuda.is_available():
+                self.device = torch.device("cuda")
+                logger.info("CUDA device detected and will be used")
+            else:
+                self.device = torch.device("cpu")
+                logger.info("Using CPU device")
+        elif self.config.get("device") == "mps":
+            # Explicitly check if MPS is available
+            if torch.backends.mps.is_available():
+                self.device = torch.device("mps")
+                logger.info("Using MPS (Metal Performance Shaders) for Mac acceleration")
+            else:
+                logger.warning("MPS requested but not available, falling back to CPU")
+                self.device = torch.device("cpu")
         else:
             self.device = torch.device(self.config.get("device", "cpu"))
+        
         logger.info(f"Using device: {self.device}")
         
-        # Q-Networks - select based on config
-        if self.config.get("advanced_options", {}).get("dueling_network", False):
-            logger.info("Using Dueling DQN architecture")
-            self.local_network = DuelingDQN(state_size, action_size, hidden_dim=self.config.get("hidden_dim", 256)).to(self.device)
-            self.target_network = DuelingDQN(state_size, action_size, hidden_dim=self.config.get("hidden_dim", 256)).to(self.device)
-        else:
-            logger.info("Using standard DQN architecture")
-            self.local_network = DQN(state_size, action_size, hidden_dim=self.config.get("hidden_dim", 256)).to(self.device)
-            self.target_network = DQN(state_size, action_size, hidden_dim=self.config.get("hidden_dim", 256)).to(self.device)
+        # Determine if we should use per-intersection model
+        self.use_per_intersection = self.config.get("use_per_intersection", False)
+        self.num_intersections = self.config.get("num_intersections", 16)  # Default for 4x4 grid
+        
+        # Import appropriate models
+        if self.use_per_intersection:
+            try:
+                from traffic_rl.models.per_intersection_dqn import PerIntersectionDQN
+                
+                logger.info("Using Per-Intersection DQN architecture")
+                self.local_network = PerIntersectionDQN(
+                    state_size, 
+                    action_size, 
+                    self.num_intersections, 
+                    hidden_dim=self.config.get("hidden_dim", 64)
+                ).to(self.device)
+                
+                self.target_network = PerIntersectionDQN(
+                    state_size, 
+                    action_size, 
+                    self.num_intersections, 
+                    hidden_dim=self.config.get("hidden_dim", 64)
+                ).to(self.device)
+            except ImportError:
+                logger.warning("Per-Intersection model not found, falling back to standard DQN")
+                self.use_per_intersection = False
+                
+        # Use standard models if per-intersection is not enabled
+        if not self.use_per_intersection:
+            # Q-Networks - select based on config
+            if self.config.get("advanced_options", {}).get("dueling_network", False):
+                from traffic_rl.models.dueling_dqn import DuelingDQN
+                logger.info("Using Dueling DQN architecture")
+                self.local_network = DuelingDQN(state_size, action_size, hidden_dim=self.config.get("hidden_dim", 256)).to(self.device)
+                self.target_network = DuelingDQN(state_size, action_size, hidden_dim=self.config.get("hidden_dim", 256)).to(self.device)
+            else:
+                from traffic_rl.models.dqn import DQN
+                logger.info("Using standard DQN architecture")
+                self.local_network = DQN(state_size, action_size, hidden_dim=self.config.get("hidden_dim", 256)).to(self.device)
+                self.target_network = DQN(state_size, action_size, hidden_dim=self.config.get("hidden_dim", 256)).to(self.device)
         
         # Initialize optimizer
         self.optimizer = optim.Adam(
@@ -95,18 +144,33 @@ class DQNAgent:
     def step(self, state, action, reward, next_state, done):
         """Save experience in replay memory, and learn if it's time."""
         try:
-            # Convert action to scalar if it's a single-item array or tensor
-            if isinstance(action, (np.ndarray, list, torch.Tensor)):
-                if hasattr(action, 'item'):
-                    action = action.item()  # For PyTorch tensors
-                elif isinstance(action, np.ndarray) and action.size == 1:
-                    action = action.item()  # For NumPy arrays
-                elif len(action) == 1:
-                    action = action[0]  # For lists
+            # Handle action arrays (per-intersection actions)
+            # For replay buffer, we'll store the global action (same for all intersections)
+            # or the first action if they're different
+            if isinstance(action, (np.ndarray, list)):
+                # Check if all actions are the same
+                if hasattr(action, 'size') and action.size > 1:
+                    # Use the most frequent action as the "global" action
+                    unique_actions, counts = np.unique(action, return_counts=True)
+                    global_action = unique_actions[np.argmax(counts)]
+                elif len(action) > 0:
+                    # Just use the first action
+                    global_action = action[0]
+                else:
+                    global_action = 0  # Default action
+            elif isinstance(action, torch.Tensor):
+                if action.numel() > 1:
+                    # Use the most frequent action
+                    unique_actions, counts = torch.unique(action, return_counts=True)
+                    global_action = unique_actions[torch.argmax(counts)].item()
+                else:
+                    global_action = action.item()
+            else:
+                global_action = action
             
             # Convert to numpy arrays with consistent shapes
             state_np = np.array(state, dtype=np.float32)
-            action_np = np.array([[action]], dtype=np.int64)  # Shape [1, 1]
+            action_np = np.array([[global_action]], dtype=np.int64)  # Store the global action
             reward_np = np.array([[reward]], dtype=np.float32)  # Shape [1, 1]
             next_state_np = np.array(next_state, dtype=np.float32)
             done_np = np.array([[done]], dtype=np.float32)  # Shape [1, 1]
@@ -138,7 +202,7 @@ class DQNAgent:
             eval_mode: If True, greedy policy is used
         
         Returns:
-            Selected action
+            Selected action(s) - one per intersection
         """
         try:
             # Handle different input types for state
@@ -170,17 +234,39 @@ class DQNAgent:
             # Set back to training mode
             self.local_network.train()
             
-            # Epsilon-greedy action selection
+            # Determine the number of intersections based on the state size and action size
+            # Each intersection has 5 features in the observation space
+            num_intersections = state_tensor.shape[1] // 5 if state_tensor.dim() > 1 else state_tensor.shape[0] // 5
+            
+            # Initialize action array
+            actions = np.zeros(num_intersections, dtype=int)
+            
+            # Choose actions per intersection
             if not eval_mode and random.random() < self.epsilon:
-                return int(random.randrange(self.action_size))
+                # Random action for each intersection
+                for i in range(num_intersections):
+                    actions[i] = int(random.randrange(self.action_size))
             else:
-                # Make sure to return a plain Python int, not a numpy or torch type
-                return int(np.argmax(action_values.cpu().data.numpy()))
+                # Reshape action values if needed (for a simple network that outputs all actions at once)
+                # If the network outputs a single value, it's a global action (apply to all intersections)
+                if len(action_values.shape) == 1 or (len(action_values.shape) == 2 and action_values.shape[1] == self.action_size):
+                    # Global action - apply the same action to all intersections
+                    best_action = int(np.argmax(action_values.cpu().data.numpy()))
+                    actions.fill(best_action)
+                else:
+                    # Per-intersection actions
+                    action_values_np = action_values.cpu().data.numpy()
+                    for i in range(num_intersections):
+                        actions[i] = int(np.argmax(action_values_np[i]))
+            
+            return actions
                 
         except Exception as e:
-            logger.error(f"Error in act() method: {e}")
-            # Return random action as fallback
-            return int(random.randrange(self.action_size))
+            logger.error(f"Error selecting action: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            # Return a random action as fallback
+            return np.random.randint(0, self.action_size, size=num_intersections)
     
     def learn(self, experiences):
         """

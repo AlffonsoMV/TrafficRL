@@ -6,7 +6,7 @@ grid_size: 4
 max_steps: 1000
 visualization: false  # Set to true if you want to see visualization during training
 random_seed: 42
-green_duration: 10
+green_duration: 1
 
 # Traffic patterns
 traffic_patterns:

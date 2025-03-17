@@ -53,6 +53,10 @@ def train(config, model_dir="models"):
         state_size = env.observation_space.shape[0] * env.observation_space.shape[1]
         action_size = env.action_space.n
         
+        # Enable independent intersection control in the config
+        config["independent_control"] = True
+        logger.info(f"Independent intersection control enabled: {config['independent_control']}")
+        
         # Initialize agent
         agent = DQNAgent(state_size, action_size, config)
         
@@ -129,11 +133,11 @@ def train(config, model_dir="models"):
                     env.current_episode = episode
                     env.current_step = step
                 
-                # Select action
-                action = agent.act(state)
+                # Select actions for each intersection independently
+                actions = agent.act(state)
                 
                 # Take action in environment
-                next_state, reward, terminated, truncated, info = env.step(action)
+                next_state, reward, terminated, truncated, info = env.step(actions)
                 next_state = next_state.flatten()  # Flatten for NN input
                 
                 # Render the environment if visualization is enabled
@@ -142,14 +146,15 @@ def train(config, model_dir="models"):
                 
                 # Apply reward clipping if enabled
                 if config.get("clip_rewards", False):
-                    reward = np.clip(reward, -10.0, 10.0)
+                    # Adjust clipping range for revised reward function
+                    reward = np.clip(reward, -5.0, 5.0)
                 
                 # Apply reward scaling if specified
                 if "reward_scale" in config:
                     reward *= config["reward_scale"]
                 
                 # Store experience
-                agent.step(state, action, reward, next_state, terminated)
+                agent.step(state, actions, reward, next_state, terminated)
                 
                 # Update state and stats
                 state = next_state
@@ -249,58 +254,53 @@ def train(config, model_dir="models"):
         # Close the environment
         env.close()
         
-        # Close progress bar
-        if progress_bar is not None:
-            progress_bar.close()
-        
         # Save final model
         try:
             model_path = os.path.join(model_dir, "final_model.pth")
             agent.save(model_path)
-            logger.info("Final model saved successfully")
+            logger.info(f"Final model saved at {model_path}")
         except Exception as e:
             logger.error(f"Failed to save final model: {e}")
-        
-        return metrics
-    
-    except KeyboardInterrupt:
-        logger.info("Training interrupted by user")
-        # Save the model before exiting
+            
+        # Save training metrics
         try:
-            model_path = os.path.join(model_dir, "interrupted_model.pth")
-            agent.save(model_path)
-            logger.info(f"Interrupted model saved to {model_path}")
+            metrics_path = os.path.join(model_dir, "training_metrics.json")
+            
+            # Convert numpy values to Python native types for JSON serialization
+            serializable_metrics = {}
+            for key, value in metrics.items():
+                if isinstance(value, list) and len(value) > 0 and isinstance(value[0], np.ndarray):
+                    serializable_metrics[key] = [v.tolist() for v in value]
+                elif isinstance(value, list) and len(value) > 0 and isinstance(value[0], (np.int64, np.float64, np.float32)):
+                    serializable_metrics[key] = [float(v) if isinstance(v, (np.float64, np.float32)) else int(v) for v in value]
+                elif isinstance(value, (np.int64, np.float64, np.float32)):
+                    serializable_metrics[key] = float(value) if isinstance(value, (np.float64, np.float32)) else int(value)
+                else:
+                    serializable_metrics[key] = value
+            
+            import json
+            with open(metrics_path, 'w') as f:
+                json.dump(serializable_metrics, f, indent=4)
+            logger.info(f"Training metrics saved to {metrics_path}")
         except Exception as e:
-            logger.error(f"Failed to save interrupted model: {e}")
+            logger.error(f"Failed to save training metrics: {e}")
         
-        # Close the environment
-        env.close()
-        
-        # Close progress bar
-        if progress_bar is not None:
-            progress_bar.close()
+        # Visualize results
+        try:
+            if not config.get("no_plots", False):
+                figure_path = os.path.join(model_dir, "training_progress.png")
+                visualize_results(metrics, figure_path)
+                logger.info(f"Training visualization saved to {figure_path}")
+        except Exception as e:
+            logger.error(f"Failed to create visualization: {e}")
             
         return metrics
-    
+        
     except Exception as e:
-        logger.error(f"Training failed: {e}")
+        logger.error(f"Error in training loop: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        
-        # Close the environment
-        try:
-            env.close()
-        except Exception:
-            pass
-        
-        # Close progress bar
-        if progress_bar is not None:
-            try:
-                progress_bar.close()
-            except Exception:
-                pass
-                
-        raise
+        return None
 
 
 if __name__ == "__main__":

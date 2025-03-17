@@ -15,7 +15,7 @@
     "grid_size": 4,
     "max_cars": 30,
     "green_duration": 1,
-    "yellow_duration": 3,
+    "yellow_duration": 1,
     "visualization": false,
     "device": "mps",
     "early_stopping_reward": 500,

@@ -44,26 +44,34 @@ class ReplayBuffer:
             
             # Convert to numpy arrays first to handle different shapes
             states_np = np.array([e.state for e in valid_experiences])
+            
             # Ensure actions are reshaped properly for gather operation
             actions_np = np.array([e.action for e in valid_experiences])
-            if actions_np.ndim == 3:  # If already has shape [batch, 1, 1]
-                actions_np = actions_np.squeeze(2)  # Convert to [batch, 1]
-            elif actions_np.ndim == 1:  # If shape is [batch]
-                actions_np = np.expand_dims(actions_np, 1)  # Convert to [batch, 1]
+            
+            # Handle actions with different shapes (for independent intersection control)
+            if actions_np.ndim == 3:
+                # Only squeeze if the dimension has size 1
+                if actions_np.shape[2] == 1:
+                    actions_np = actions_np.squeeze(2)
+                # Otherwise, keep the shape for independent actions per intersection
+            elif actions_np.ndim == 1:
+                actions_np = np.expand_dims(actions_np, 1)
                 
             rewards_np = np.array([e.reward for e in valid_experiences])
-            if rewards_np.ndim == 3:  # If already has shape [batch, 1, 1]
-                rewards_np = rewards_np.squeeze(2)  # Convert to [batch, 1]
-            elif rewards_np.ndim == 1:  # If shape is [batch]
-                rewards_np = np.expand_dims(rewards_np, 1)  # Convert to [batch, 1]
+            if rewards_np.ndim == 3:
+                if rewards_np.shape[2] == 1:  # Only squeeze if dim size is 1
+                    rewards_np = rewards_np.squeeze(2)
+            elif rewards_np.ndim == 1:
+                rewards_np = np.expand_dims(rewards_np, 1)
                 
             next_states_np = np.array([e.next_state for e in valid_experiences])
             
             dones_np = np.array([e.done for e in valid_experiences])
-            if dones_np.ndim == 3:  # If already has shape [batch, 1, 1]
-                dones_np = dones_np.squeeze(2)  # Convert to [batch, 1]
-            elif dones_np.ndim == 1:  # If shape is [batch]
-                dones_np = np.expand_dims(dones_np, 1)  # Convert to [batch, 1]
+            if dones_np.ndim == 3:
+                if dones_np.shape[2] == 1:  # Only squeeze if dim size is 1
+                    dones_np = dones_np.squeeze(2)
+            elif dones_np.ndim == 1:
+                dones_np = np.expand_dims(dones_np, 1)
             
             # Convert to torch tensors
             states = torch.tensor(states_np, dtype=torch.float32)

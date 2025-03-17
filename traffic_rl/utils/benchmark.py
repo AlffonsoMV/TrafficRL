@@ -592,13 +592,13 @@ def create_benchmark_agents(config, model_path=None):
     # Add baseline agents
     agents["FixedTiming"] = FixedTimingAgent(
         action_size=2,  # Binary action space [NS_GREEN, EW_GREEN]
-        phase_duration=config.get("green_duration", 10) * 3  # 3x longer than default green duration
+        phase_duration= 1
     )
     
     agents["AdaptiveTiming"] = AdaptiveTimingAgent(
         action_size=2,
-        min_phase_duration=config.get("green_duration", 10),
-        max_phase_duration=config.get("green_duration", 10) * 6
+        min_phase_duration=1,
+        max_phase_duration=1 
     )
     
     agents["Random"] = RandomAgent(

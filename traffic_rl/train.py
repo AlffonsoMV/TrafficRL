@@ -78,9 +78,9 @@ def train(config, model_dir="models"):
         current_pattern = "uniform"  # Start with uniform pattern
         pattern_schedule = {
             0: "uniform",         # Start with uniform
-            100: "rush_hour",     # Switch to rush hour after 100 episodes
-            200: "weekend",       # Switch to weekend after 200 episodes
-            300: "uniform"        # Back to uniform after 300 episodes
+            400: "rush_hour",     # Switch to rush hour after 100 episodes
+            450: "weekend",       # Switch to weekend after 200 episodes
+            800: "uniform"        # Back to uniform after 300 episodes
         }
         
         # Training progress tracking

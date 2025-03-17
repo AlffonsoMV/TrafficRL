@@ -39,7 +39,7 @@ class TrafficSimulation(gym.Env):
         # Environment configuration
         self.grid_size = config.get("grid_size", 4)
         self.max_cars = config.get("max_cars", 30)
-        self.green_duration = config.get("green_duration", 10)
+        self.green_duration = config.get("green_duration", 1)
         self.yellow_duration = config.get("yellow_duration", 3)
         self.visualization = visualization
         

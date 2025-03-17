@@ -27,7 +27,7 @@ CONFIG = {
     "save_frequency": 25,       # Model saving frequency (episodes)
     "grid_size": 4,             # Size of the traffic grid (4x4)
     "max_cars": 30,             # Maximum number of cars per lane
-    "green_duration": 10,       # Default green light duration (seconds)
+    "green_duration": 1,       # Default green light duration (seconds)
     "yellow_duration": 3,       # Default yellow light duration (seconds)
     "visualization": False,     # Enable visualization during training
     "device": "auto",           # Auto-detect device (CUDA, CPU, MPS)
@@ -60,11 +60,11 @@ CONFIG = {
         }
     },
     "advanced_options": {
-        "prioritized_replay": True,
+        "prioritized_replay": False,
         "per_alpha": 0.6,
         "per_beta": 0.4,
-        "dueling_network": True,
-        "double_dqn": True
+        "dueling_network": False,
+        "double_dqn": False
     },
     "random_seed": 42           # Random seed for reproducibility
 }

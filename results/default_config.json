@@ -14,7 +14,7 @@
     "save_frequency": 25,
     "grid_size": 4,
     "max_cars": 30,
-    "green_duration": 10,
+    "green_duration": 1,
     "yellow_duration": 3,
     "visualization": false,
     "device": "mps",

@@ -24,21 +24,23 @@ from datetime import datetime
 from traffic_rl.config import load_config, save_config, override_config_with_args
 from traffic_rl.train import train
 from traffic_rl.evaluate import evaluate_agent
-from traffic_rl.utils.benchmark import benchmark_agents, create_benchmark_agents
+from traffic_rl.benchmark import benchmark_agents, create_benchmark_agents
 from traffic_rl.utils.logging import setup_logging
 from traffic_rl.utils.visualization import (
     visualize_results, 
     visualize_traffic_patterns,
     save_visualization
 )
-from traffic_rl.utils.analysis import (
-    analyze_training_metrics, 
-    comparative_analysis, 
-    analyze_decision_boundaries,
+from traffic_rl.analysis import (
+    analyze_traffic_patterns,
+    analyze_training_metrics,
+    comparative_analysis,
     create_comprehensive_report
 )
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
 from traffic_rl.agents.dqn_agent import DQNAgent
+
+logger = logging.getLogger("TrafficRL.CLI")
 
 
 def set_random_seed(seed):
@@ -156,6 +158,10 @@ def evaluate_command(args, logger):
         results[pattern] = result
         
         # Print summary
+        if "error" in result:
+            logger.error(f"Evaluation failed: {result['error']}")
+            continue
+            
         logger.info(f"Evaluation results for {pattern}:")
         logger.info(f"  Average Reward: {result['avg_reward']:.2f} ± {result['std_reward']:.2f}")
         logger.info(f"  Average Waiting Time: {result['avg_waiting_time']:.2f}")

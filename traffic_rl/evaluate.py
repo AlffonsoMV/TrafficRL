@@ -9,12 +9,16 @@ import numpy as np
 import torch
 import logging
 import pygame  # Add pygame import
+import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 # Import environment and agent
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
 from traffic_rl.agents.dqn_agent import DQNAgent
+from traffic_rl.utils.visualization import visualize_results
+from traffic_rl.analysis.comparative import comparative_analysis
 
-logger = logging.getLogger("Evaluate")
+logger = logging.getLogger("TrafficRL.Evaluate")
 
 def evaluate(agent, env, num_episodes=10):
     """
@@ -124,7 +128,12 @@ def evaluate_agent(config, model_path, traffic_pattern="uniform", num_episodes=1
         
         success = agent.load(model_path)
         if not success:
-            raise ValueError(f"Failed to load model from {model_path}")
+            logger.error(f"Failed to load model from {model_path}")
+            return {
+                "error": f"Failed to load model from {model_path}",
+                "status": "error",
+                "model_path": model_path
+            }
         
         logger.info(f"Evaluating agent from {model_path} with {traffic_pattern} traffic pattern...")
         

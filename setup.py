@@ -5,13 +5,14 @@ setup(
     version="0.1.0",
     packages=find_packages(),
     install_requires=[
-        "numpy",
-        "torch",
-        "matplotlib",
-        "gymnasium",
-        "pygame",
-        "pandas",
-        "seaborn",
+        'numpy>=1.19.0',
+        'torch>=2.0.0',
+        'matplotlib>=3.3.0',
+        'gymnasium>=0.26.0',
+        'pygame>=2.0.0',
+        'pandas>=1.1.0',
+        'seaborn>=0.11.0',
+        'tqdm>=4.65.0',
     ],
     entry_points={
         "console_scripts": [

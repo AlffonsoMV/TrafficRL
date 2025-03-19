@@ -472,8 +472,13 @@ class DQNAgent:
     def load(self, filepath):
         """Load model weights."""
         try:
-            # Set weights_only=False to handle PyTorch 2.6 compatibility
-            checkpoint = torch.load(filepath, map_location=self.device, weights_only=False)
+            # Try multiple loading strategies for compatibility
+            try:
+                # First attempt: with weights_only=False (PyTorch 2.6+)
+                checkpoint = torch.load(filepath, map_location=self.device, weights_only=False)
+            except TypeError:
+                # Second attempt: without weights_only parameter (older PyTorch versions)
+                checkpoint = torch.load(filepath, map_location=self.device)
             
             # Check if the saved model has the correct architecture
             if 'independent_control' in checkpoint and checkpoint['independent_control'] != self.independent_control:
@@ -489,6 +494,7 @@ class DQNAgent:
                 self.epsilon = checkpoint['epsilon']
                 
             logger.info(f"Model loaded from {filepath}")
+            return True
         except Exception as e:
             logger.error(f"Error loading model: {e}")
-            raise
+            return False

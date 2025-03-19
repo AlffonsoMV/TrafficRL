@@ -16,6 +16,16 @@ import matplotlib.pyplot as plt
 
 logger = logging.getLogger("TrafficRL")
 
+# Define colors for black background
+COLORS = {
+    'background': 'black',
+    'text': 'white',
+    'grid': '#555555',
+    'line1': '#00B386',  # teal green
+    'line2': '#5B9BD5',  # blue
+    'accent': '#FFD166',  # gold
+}
+
 def visualize_results(rewards_history, avg_rewards_history, save_path=None):
     """
     Visualize training results.
@@ -26,24 +36,41 @@ def visualize_results(rewards_history, avg_rewards_history, save_path=None):
         save_path: Path to save the plot
     """
     try:
-        plt.figure(figsize=(12, 6))
+        plt.figure(figsize=(12, 6), facecolor=COLORS['background'])
+        ax = plt.gca()
+        ax.set_facecolor(COLORS['background'])
         
         # Plot episode rewards
-        plt.plot(rewards_history, alpha=0.6, label='Episode Reward')
+        plt.plot(rewards_history, alpha=0.6, label='Episode Reward', color=COLORS['line1'])
         
         # Plot 100-episode rolling average
-        plt.plot(avg_rewards_history, label='Avg Reward (100 episodes)')
+        plt.plot(avg_rewards_history, label='Avg Reward (100 episodes)', color=COLORS['line2'], linewidth=2.5)
         
-        plt.xlabel('Episode')
-        plt.ylabel('Reward')
-        plt.title('Training Progress')
-        plt.legend()
-        plt.grid(True)
+        plt.xlabel('Episode', color=COLORS['text'])
+        plt.ylabel('Reward', color=COLORS['text'])
+        plt.title('Training Progress', color=COLORS['text'], fontweight='bold')
+        
+        # Set tick colors to white
+        ax.tick_params(axis='x', colors=COLORS['text'])
+        ax.tick_params(axis='y', colors=COLORS['text'])
+        
+        # Style legend for black background
+        legend = plt.legend(facecolor=COLORS['background'])
+        for text in legend.get_texts():
+            text.set_color(COLORS['text'])
+            
+        plt.grid(True, linestyle='--', alpha=0.3, color=COLORS['grid'])
+        
+        # Remove top and right spines
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_color(COLORS['grid'])
+        ax.spines['left'].set_color(COLORS['grid'])
         
         if save_path:
             # Ensure directory exists
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            plt.savefig(save_path)
+            plt.savefig(save_path, facecolor=COLORS['background'])
             logger.info(f"Training visualization saved to {save_path}")
         
         plt.close()
@@ -90,7 +117,17 @@ def visualize_traffic_patterns(config, save_path=None):
         time_of_day = np.linspace(0, 24, 1440)  # 24 hours with minute resolution
         
         # Plot traffic patterns
-        plt.figure(figsize=(12, 6))
+        plt.figure(figsize=(12, 6), facecolor=COLORS['background'])
+        ax = plt.gca()
+        ax.set_facecolor(COLORS['background'])
+        
+        # Define vibrant colors for patterns
+        pattern_colors = {
+            "uniform": "#00B386",     # teal
+            "rush_hour": "#FF5C5C",   # red
+            "weekend": "#FFD166",     # gold
+            "morning_peak": "#5B9BD5" # blue
+        }
         
         for pattern_name, pattern_config in patterns.items():
             # Calculate traffic intensity based on pattern
@@ -130,32 +167,51 @@ def visualize_traffic_patterns(config, save_path=None):
                 logger.warning(f"Unknown traffic pattern: {pattern_name}")
                 continue
             
-            # Plot this pattern
-            plt.plot(time_of_day, intensity, label=pattern_name)
+            # Get color for this pattern
+            color = pattern_colors.get(pattern_name, "#FFFFFF")
+            
+            # Plot this pattern with enhanced line styling
+            plt.plot(time_of_day, intensity, label=pattern_name, color=color, linewidth=2.5)
         
-        # Add labels and title
-        plt.xlabel('Time of Day (hours)')
-        plt.ylabel('Traffic Intensity')
-        plt.title('Traffic Patterns Over 24 Hours')
-        plt.legend()
-        plt.grid(True)
+        # Add labels and title with white text
+        plt.xlabel('Time of Day (hours)', color=COLORS['text'], fontweight='bold')
+        plt.ylabel('Traffic Intensity', color=COLORS['text'], fontweight='bold')
+        plt.title('Traffic Patterns Over 24 Hours', color=COLORS['text'], fontweight='bold')
+        
+        # Set tick colors to white
+        ax.tick_params(axis='x', colors=COLORS['text'])
+        ax.tick_params(axis='y', colors=COLORS['text'])
+        
+        # Style legend for black background
+        legend = plt.legend(facecolor='#333333', framealpha=0.7)
+        for text in legend.get_texts():
+            text.set_color(COLORS['text'])
+            
+        plt.grid(True, linestyle='--', alpha=0.3, color=COLORS['grid'])
+        
+        # Remove top and right spines
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_color(COLORS['grid'])
+        ax.spines['left'].set_color(COLORS['grid'])
+        
         plt.xlim(0, 24)
         plt.xticks(np.arange(0, 25, 3))
         
-        # Add time labels (morning, noon, evening, night)
+        # Add time labels (morning, noon, evening, night) with white text
         plt.annotate('Morning', xy=(8, plt.ylim()[0]), xytext=(8, plt.ylim()[0] - 0.01 * (plt.ylim()[1] - plt.ylim()[0])),
-                    ha='center', fontsize=10)
+                    ha='center', fontsize=10, color=COLORS['text'])
         plt.annotate('Noon', xy=(12, plt.ylim()[0]), xytext=(12, plt.ylim()[0] - 0.01 * (plt.ylim()[1] - plt.ylim()[0])),
-                    ha='center', fontsize=10)
+                    ha='center', fontsize=10, color=COLORS['text'])
         plt.annotate('Evening', xy=(18, plt.ylim()[0]), xytext=(18, plt.ylim()[0] - 0.01 * (plt.ylim()[1] - plt.ylim()[0])),
-                    ha='center', fontsize=10)
+                    ha='center', fontsize=10, color=COLORS['text'])
         plt.annotate('Night', xy=(22, plt.ylim()[0]), xytext=(22, plt.ylim()[0] - 0.01 * (plt.ylim()[1] - plt.ylim()[0])),
-                    ha='center', fontsize=10)
+                    ha='center', fontsize=10, color=COLORS['text'])
         
         # Save the plot if path is provided
         if save_path:
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            plt.savefig(save_path)
+            plt.savefig(save_path, facecolor=COLORS['background'])
             logger.info(f"Traffic patterns visualization saved to {save_path}")
         
         plt.close()

@@ -1,0 +1,58 @@
+{
+    "sim_time": 3600,
+    "num_episodes": 500,
+    "max_steps": 500,
+    "learning_rate": 0.0005,
+    "gamma": 0.99,
+    "epsilon_start": 1.0,
+    "epsilon_end": 0.01,
+    "epsilon_decay": 0.9,
+    "buffer_size": 50000,
+    "batch_size": 32,
+    "target_update": 10,
+    "eval_frequency": 10,
+    "save_frequency": 25,
+    "grid_size": 6,
+    "max_cars": 30,
+    "green_duration": 1,
+    "yellow_duration": 3,
+    "visualization": false,
+    "device": "auto",
+    "early_stopping_reward": 10000000000.0,
+    "early_stopping_patience": 100,
+    "checkpoint_dir": "checkpoints",
+    "hidden_dim": 128,
+    "weight_decay": 0.0001,
+    "grad_clip": 1.0,
+    "use_lr_scheduler": true,
+    "lr_step_size": 200,
+    "lr_decay": 0.95,
+    "clip_rewards": true,
+    "reward_scale": 1.0,
+    "independent_control": true,
+    "traffic_patterns": {
+        "uniform": {
+            "arrival_rate": 0.03,
+            "variability": 0.01
+        },
+        "rush_hour": {
+            "morning_peak": 0.33,
+            "evening_peak": 0.71,
+            "peak_intensity": 2.0,
+            "base_arrival": 0.03
+        },
+        "weekend": {
+            "midday_peak": 0.5,
+            "peak_intensity": 1.5,
+            "base_arrival": 0.02
+        }
+    },
+    "advanced_options": {
+        "prioritized_replay": true,
+        "per_alpha": 0.6,
+        "per_beta": 0.4,
+        "dueling_network": true,
+        "double_dqn": true
+    },
+    "random_seed": 42
+}

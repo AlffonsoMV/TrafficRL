@@ -11,13 +11,14 @@ import torch
 import logging
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-import pygame  # Add pygame import
+import pygame
 
 # Import environment and agent
 from traffic_rl.environment.traffic_simulation import TrafficSimulation
 from traffic_rl.agents.dqn_agent import DQNAgent
 from traffic_rl.utils.visualization import visualize_results
 from traffic_rl.evaluate import evaluate
+from traffic_rl.analysis.training import analyze_training_metrics, plot_training_curves
 
 logger = logging.getLogger("TrafficRL.Train")
 

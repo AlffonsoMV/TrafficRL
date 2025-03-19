@@ -11,9 +11,9 @@ This package provides a comprehensive framework for training and evaluating rein
 
 ## Installation
 
-### From Source
+### Quick Installation
 
-To install the package from source:
+For a quick and easy installation, you can use the provided install script which handles the package installation automatically:
 
 ```bash
 # Clone the repository
@@ -22,10 +22,35 @@ git clone https://github.com/yourusername/traffic-rl.git
 # Navigate to the project directory
 cd traffic-rl
 
-# Install dependencies
-pip install -r requirements.txt
+# Run the install script
+./install.sh
 
-# Install the package in development mode
+# Optionally, create a virtual environment
+./install.sh --venv
+```
+
+After installation, you can verify everything is working correctly with the test script that checks all dependencies and module imports:
+
+```bash
+# Test the installation
+python test_installation.py
+
+# Check the CLI
+traffic_rl --help
+```
+
+### Manual Installation
+
+To install the package manually:
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/traffic-rl.git
+
+# Navigate to the project directory
+cd traffic-rl
+
+# Install the package
 pip install -e .
 ```
 
@@ -46,6 +71,11 @@ This will install the `traffic_rl` command-line tool and all required dependenci
 
 The package provides a unified command-line interface for all operations:
 
+```bash
+# Get help on available commands
+traffic_rl --help
+```
+
 ### Common Options
 
 All commands support these common options:
@@ -65,16 +95,16 @@ All commands support these common options:
 
 ```bash
 # Basic training
-python -m traffic_rl train --output results/training
+traffic_rl train --output results/training
 
 # Training with specific configuration
-python -m traffic_rl train --config config.json --episodes 1000 --output results/training
+traffic_rl train --config config.json --episodes 1000 --output results/training
 
 # Training with visualization enabled
-python -m traffic_rl train --visualization --output results/training
+traffic_rl train --visualization --output results/training
 
 # Training with no results plots
-python -m traffic_rl train --no-plots --output results/training
+traffic_rl train --no-plots --output results/training
 ```
 
 #### Training Options
@@ -89,13 +119,13 @@ python -m traffic_rl train --no-plots --output results/training
 
 ```bash
 # Evaluate a model on a specific traffic pattern
-python -m traffic_rl evaluate --model results/training/best_model.pth --episodes 20 --output results/evaluation
+traffic_rl evaluate --model results/training/best_model.pth --episodes 20 --output results/evaluation
 
 # Evaluate on multiple traffic patterns
-python -m traffic_rl evaluate --model results/training/best_model.pth --patterns uniform,rush_hour,weekend --output results/evaluation
+traffic_rl evaluate --model results/training/best_model.pth --patterns uniform,rush_hour,weekend --output results/evaluation
 
 # Evaluate with visualization
-python -m traffic_rl evaluate --model results/training/best_model.pth --visualization --output results/evaluation
+traffic_rl evaluate --model results/training/best_model.pth --visualization --output results/evaluation
 ```
 
 #### Evaluation Options
@@ -110,16 +140,16 @@ python -m traffic_rl evaluate --model results/training/best_model.pth --visualiz
 
 ```bash
 # Visualize environment with trained model
-python -m traffic_rl visualize --type environment --model results/training/best_model.pth --pattern rush_hour --duration 60 --output results/visualizations
+traffic_rl visualize --type environment --model results/training/best_model.pth --pattern rush_hour --duration 60 --output results/visualizations
 
 # Visualize training metrics
-python -m traffic_rl visualize --type metrics --metrics results/training/training_metrics.json --output results/visualizations
+traffic_rl visualize --type metrics --metrics results/training/training_metrics.json --output results/visualizations
 
 # Visualize traffic patterns
-python -m traffic_rl visualize --type patterns --output results/visualizations
+traffic_rl visualize --type patterns --output results/visualizations
 
 # Specify custom output filename
-python -m traffic_rl visualize --type environment --model results/training/best_model.pth --filename traffic_video.mp4 --output results/visualizations
+traffic_rl visualize --type environment --model results/training/best_model.pth --filename traffic_video.mp4 --output results/visualizations
 ```
 
 #### Visualization Options
@@ -136,10 +166,10 @@ python -m traffic_rl visualize --type environment --model results/training/best_
 
 ```bash
 # Benchmark multiple agents
-python -m traffic_rl benchmark --model results/training/best_model.pth --episodes 15 --output results/benchmark --patterns uniform,rush_hour,weekend
+traffic_rl benchmark --model results/training/best_model.pth --episodes 15 --output results/benchmark --patterns uniform,rush_hour,weekend
 
 # Benchmark without visualizations
-python -m traffic_rl benchmark --model results/training/best_model.pth --output results/benchmark --no-visualization
+traffic_rl benchmark --model results/training/best_model.pth --output results/benchmark --no-visualization
 ```
 
 #### Benchmarking Options
@@ -153,10 +183,10 @@ python -m traffic_rl benchmark --model results/training/best_model.pth --output 
 
 ```bash
 # Comprehensive analysis
-python -m traffic_rl analyze --model results/training/best_model.pth --metrics results/training/training_metrics.json --benchmark-dir results/benchmark --output results/analysis --episodes 10
+traffic_rl analyze --model results/training/best_model.pth --metrics results/training/training_metrics.json --benchmark-dir results/benchmark --output results/analysis --episodes 10
 
 # Analysis without opening browser
-python -m traffic_rl analyze --model results/training/best_model.pth --metrics results/training/training_metrics.json --output results/analysis --no-browser
+traffic_rl analyze --model results/training/best_model.pth --metrics results/training/training_metrics.json --output results/analysis --no-browser
 ```
 
 #### Analysis Options
@@ -184,13 +214,13 @@ When you evaluate or visualize a model, you can specify:
 
 ```bash
 # Use the best model saved during training
-python -m traffic_rl evaluate --model results/training/best_model.pth
+traffic_rl evaluate --model results/training/best_model.pth
 
 # Use a specific checkpoint from training
-python -m traffic_rl evaluate --model results/training/model_episode_450.pth
+traffic_rl evaluate --model results/training/model_episode_450.pth
 
 # Use the final model from training
-python -m traffic_rl evaluate --model results/training/final_model.pth
+traffic_rl evaluate --model results/training/final_model.pth
 ```
 
 ## Advanced Features
@@ -221,16 +251,20 @@ traffic_rl/                 # Main package
 │   ├── dqn.py              # Standard DQN network
 │   └── dueling_dqn.py      # Dueling DQN architecture
 ├── utils/                  # Utility functions and tools
-│   ├── analysis.py         # Result analysis tools
-│   ├── benchmark.py        # Agent benchmarking tools
 │   ├── logging.py          # Logging utilities
 │   └── visualization.py    # Visualization tools
+├── analysis/               # Analysis tools
+│   ├── traffic_patterns.py # Traffic pattern analysis
+│   ├── training.py         # Training metrics analysis
+│   └── comparative.py      # Comparative analysis
+├── benchmark/              # Benchmarking tools
+│   ├── core.py            # Core benchmarking functionality
+│   ├── visualization.py   # Benchmark visualization
+│   └── agents.py          # Benchmark agent creation
 ├── cli.py                  # Command-line interface
 ├── config.py               # Configuration handling
 ├── train.py                # Training functionality
 ├── evaluate.py             # Evaluation functionality
-├── benchmark.py            # Benchmarking script
-├── analyze.py              # Analysis script
 └── results/                # Default directory for results
 
 # Root level
@@ -245,5 +279,7 @@ traffic_rl/                 # Main package
 - **Environment**: Traffic simulation based on Gymnasium
 - **Memory**: Experience replay buffers for DQN training
 - **Models**: Neural network architectures for value estimation
-- **Utils**: Tools for logging, visualization, benchmarking, and analysis
+- **Utils**: Tools for logging and visualization
+- **Analysis**: Tools for analyzing traffic patterns, training metrics, and comparative analysis
+- **Benchmark**: Tools for benchmarking different agents and configurations
 - **CLI**: Unified command-line interface for all operations

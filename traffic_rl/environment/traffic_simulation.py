@@ -22,7 +22,7 @@ class TrafficSimulation(gym.Env):
     """
     metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': 180}
     
-    def __init__(self, config, visualization=False, random_seed=None):
+    def __init__(self, config, visualization=False, random_seed=None, traffic_pattern=None):
         """
         Initialize the traffic simulation environment.
         
@@ -30,6 +30,7 @@ class TrafficSimulation(gym.Env):
             config: Configuration dictionary
             visualization: Whether to enable visualization
             random_seed: Random seed for reproducibility
+            traffic_pattern: Traffic pattern to use (uniform, rush_hour, weekend)
         """
         super(TrafficSimulation, self).__init__()
         
@@ -62,9 +63,15 @@ class TrafficSimulation(gym.Env):
             dtype=np.float32
         )
         
-        # Initialize default traffic pattern
-        self.traffic_pattern = "uniform"
-        self.traffic_config = config["traffic_patterns"]["uniform"]
+        # Initialize traffic pattern
+        self.traffic_pattern = traffic_pattern or config.get("traffic_pattern", "uniform")
+        
+        # Make sure the pattern is valid
+        if self.traffic_pattern not in config.get("traffic_patterns", {}):
+            logger.warning(f"Unknown traffic pattern: {self.traffic_pattern}, defaulting to uniform")
+            self.traffic_pattern = "uniform"
+        
+        self.traffic_config = config["traffic_patterns"][self.traffic_pattern]
         
         # Initialize visualization if enabled
         if self.visualization:
@@ -102,20 +109,18 @@ class TrafficSimulation(gym.Env):
         # Track green light durations for each direction
         self.ns_green_duration = np.zeros(self.num_intersections)
         self.ew_green_duration = np.zeros(self.num_intersections)
-        self.light_switches = 0
         
-        # Simulation time
+        # Reset simulation time
         self.sim_time = 0
-        
-        # Step counter for tracking progress
         self.step_count = 0
         
         # Generate observation
         observation = self._get_observation()
         
-        # Info dictionary
+        # Info dictionary for the reset state
         info = {}
         
+        # Return observation as required by newer Gymnasium API
         return observation, info
     
     def step(self, actions):

@@ -18,7 +18,7 @@ def create_benchmark_agents(config, model_path=None):
     
     Args:
         config: Configuration dictionary
-        model_path: Optional path to a trained model
+        model_path: Optional path to a trained model or list of paths
         
     Returns:
         Dictionary mapping agent names to agent objects
@@ -31,6 +31,9 @@ def create_benchmark_agents(config, model_path=None):
         
         # Create DQN agent if model path is provided
         if model_path:
+            # Handle case where model_path is a list
+            model_path_str = model_path[0] if isinstance(model_path, list) and model_path else model_path
+            
             # Create a config for DQN agent with the correct hidden_dim
             # The original model uses hidden_dim=128, not 256
             # The original model also uses action_size=2, not 4
@@ -58,10 +61,10 @@ def create_benchmark_agents(config, model_path=None):
             
             # Load the model
             try:
-                agents['dqn'].load(model_path)
-                logger.info(f"Loaded DQN model from {model_path}")
+                agents['dqn'].load(model_path_str)
+                logger.info(f"Loaded DQN model from {model_path_str}")
             except Exception as e:
-                logger.error(f"Failed to load model: {e}")
+                logger.error(f"Error loading model: {e}")
                 # Continue with other agents even if DQN fails
                 del agents['dqn']
         

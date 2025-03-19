@@ -368,14 +368,16 @@ def analyze_command(args, logger):
     os.makedirs(args.output, exist_ok=True)
     
     # Parse model paths
-    model_paths = []
+    model_paths = None
     if args.model:
-        model_paths = [args.model]
+        # Use a string for a single model, not a list
+        model_paths = args.model
     
     # Parse training metrics paths
-    training_metrics = []
+    training_metrics_path = None
     if args.metrics:
-        training_metrics = [args.metrics]
+        # Use a string for a single metrics file, not a list
+        training_metrics_path = args.metrics
     
     # Parse traffic patterns
     if args.patterns:
@@ -386,32 +388,22 @@ def analyze_command(args, logger):
     # Run comprehensive analysis
     from traffic_rl.analyze import run_comprehensive_analysis
     
-    analysis_dir = run_comprehensive_analysis(
-        config=config,
+    analysis_results = run_comprehensive_analysis(
         model_paths=model_paths,
-        training_metrics=training_metrics,
-        benchmark_dir=args.benchmark_dir,
+        training_metrics_path=training_metrics_path,
+        config=config,
         output_dir=args.output,
-        traffic_patterns=traffic_patterns,
-        num_episodes=args.episodes,
-        reuse_visualizations=False  # Always create new visualizations
+        open_browser=not args.no_browser,
+        traffic_patterns=traffic_patterns
     )
     
-    if analysis_dir:
-        logger.info(f"Analysis completed. Results available in {analysis_dir}")
+    if analysis_results:
+        logger.info(f"Analysis completed. Results available in {args.output}")
         
         # Find HTML report
-        report_path = os.path.join(analysis_dir, "report", "analysis_report.html")
-        if os.path.exists(report_path):
+        report_path = analysis_results.get('report_path')
+        if report_path and os.path.exists(report_path):
             logger.info(f"HTML report available at: {report_path}")
-            
-            # Try to open the report in a browser
-            if not args.no_browser:
-                try:
-                    import webbrowser
-                    webbrowser.open(f"file://{os.path.abspath(report_path)}")
-                except Exception as e:
-                    logger.warning(f"Could not open report in browser: {e}")
         
         return True
     else:

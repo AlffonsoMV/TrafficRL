@@ -17,7 +17,7 @@ For a quick and easy installation, you can use the provided install script which
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/traffic-rl.git
+git clone https://github.com/AlffonsoMV/TrafficRL.git
 
 # Navigate to the project directory
 cd traffic-rl
@@ -26,7 +26,7 @@ cd traffic-rl
 ./install.sh
 
 # Optionally, create a virtual environment
-./install.sh --venv
+# ./install.sh --venv
 ```
 
 After installation, you can verify everything is working correctly with the test script that checks all dependencies and module imports:
@@ -45,7 +45,7 @@ To install the package manually:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/traffic-rl.git
+git clone https://github.com/AlffonsoMV/TrafficRL.git
 
 # Navigate to the project directory
 cd traffic-rl

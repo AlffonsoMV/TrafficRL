@@ -283,3 +283,10 @@ traffic_rl/                 # Main package
 - **Analysis**: Tools for analyzing traffic patterns, training metrics, and comparative analysis
 - **Benchmark**: Tools for benchmarking different agents and configurations
 - **CLI**: Unified command-line interface for all operations
+
+## Authors
+
+- [Alfonso Mateos Vicente](https://github.com/AlffonsoMV)
+- [Emiliano Pizaña Vela](https://github.com/josephroque)
+- [Charles de Monchy](https://github.com/emipizana)
+- [Henri Chevreux](https://github.com/henriChevreux)

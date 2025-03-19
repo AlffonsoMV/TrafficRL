@@ -20,7 +20,7 @@ For a quick and easy installation, you can use the provided install script which
 git clone https://github.com/AlffonsoMV/TrafficRL.git
 
 # Navigate to the project directory
-cd traffic-rl
+cd TrafficRL
 
 # Run the install script
 ./install.sh
@@ -48,7 +48,7 @@ To install the package manually:
 git clone https://github.com/AlffonsoMV/TrafficRL.git
 
 # Navigate to the project directory
-cd traffic-rl
+cd TrafficRL
 
 # Install the package
 pip install -e .

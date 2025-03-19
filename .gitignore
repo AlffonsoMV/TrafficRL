@@ -43,6 +43,7 @@ logs/
 results/*/
 !results/default_config.json
 *.pth
+visualizations/*/
 
 # OS specific
 .DS_Store
